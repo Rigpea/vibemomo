@@ -1,0 +1,22 @@
+{
+  "kind": "game",
+  "name": "Room One",
+  "entry": "src/index.html",
+  "build": { "type": "static", "dir": "src", "out": "dist" },
+  "tuning": "src/tuning.js",
+  "cues": [
+    { "id": "jump", "label": "Jump", "trigger": "Space / Up / W" },
+    { "id": "land", "label": "Land", "trigger": "Touching ground after a fall" },
+    { "id": "push", "label": "Crate scrape", "trigger": "Pushing the crate (rate-limited)" },
+    { "id": "plate", "label": "Plate click", "trigger": "Crate latches on the pressure plate" },
+    { "id": "door", "label": "Door open", "trigger": "Exit door starts opening" },
+    { "id": "cleared", "label": "Room cleared", "trigger": "Entering the open door" }
+  ],
+  "readiness": [
+    "Core loop playable",
+    "Controls explained",
+    "Objective + restart",
+    "Audio cue on event",
+    "Export runs by double-click"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "kind": "audio",
+  "name": "Sound Sketch",
+  "description": "Four short, dry, quiet sound cues you can play, tune live and render",
+  "entry": "src/index.html",
+  "build": { "type": "static", "dir": "src", "out": "dist" },
+  "tuning": "src/tuning.js",
+  "cues": [
+    { "id": "tap", "label": "Tap", "trigger": "Button or key 1" },
+    { "id": "blip", "label": "Blip", "trigger": "Button or key 2" },
+    { "id": "tick", "label": "Tick", "trigger": "Button or key 3" },
+    { "id": "swell", "label": "Swell", "trigger": "Button or key 4" }
+  ],
+  "readiness": [
+    "Every cue is distinct",
+    "Cues are short, dry and quiet",
+    "Mute is remembered",
+    "A rendered file plays elsewhere"
+  ]
+}

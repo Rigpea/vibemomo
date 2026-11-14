@@ -1,0 +1,14 @@
+{
+  "kind": "studio",
+  "name": "Atelier (the studio itself)",
+  "entry": "client/index.html",
+  "build": { "type": "none" },
+  "readiness": [
+    "npm run check passes",
+    "UI inspected at 1280x720",
+    "Projects open, preview, checkpoint, compare, restore",
+    "Claude Code handoff round-trips a task",
+    "Memory correction visible on both sides"
+  ],
+  "description": "The studio registered as its own project so improvements route through the same task loop. Versions here are studio versions (git tags), never product versions."
+}

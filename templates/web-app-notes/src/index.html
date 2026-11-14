@@ -1,0 +1,76 @@
+<!doctype html>
+<!--
+  Quick Notes — index.html
+  Plain page, plain <script> tags (no modules, no network), so the app also
+  runs when this file is opened straight from disk (file://).
+  Load order matters: store.js (saving/loading) -> app.js (the interface).
+  Most elements below start empty or hidden; app.js fills them in.
+-->
+<html lang="en" data-storage-key="quick-notes">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>Quick Notes</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <header id="top">
+      <h1>Quick Notes <span id="count" class="count" aria-live="polite">0 notes</span></h1>
+      <span id="save-status" class="save-status" role="status" aria-live="polite" data-state="idle"></span>
+    </header>
+
+    <!-- Banner for problems that do not stop the app (storage full, import errors). -->
+    <div id="banner" class="banner" role="alert" hidden>
+      <p id="banner-text"></p>
+      <button id="banner-close" type="button" class="ghost" aria-label="Dismiss message">Dismiss</button>
+    </div>
+
+    <!-- Shown INSTEAD of the notes when saved data could not be read. -->
+    <section id="error-state" class="state error-state" hidden aria-labelledby="error-title">
+      <h2 id="error-title">Your saved notes could not be read</h2>
+      <p id="error-detail"></p>
+      <p>A copy of the damaged data has been kept, so starting fresh does not lose it.</p>
+      <div class="row">
+        <button id="btn-fresh" type="button" class="primary">Start fresh</button>
+        <button id="btn-backup" type="button">Download the damaged data</button>
+      </div>
+    </section>
+
+    <form id="composer" class="composer" autocomplete="off">
+      <label for="new-note" class="visually-hidden">New note</label>
+      <input id="new-note" type="text" placeholder="Write a note and press Enter" maxlength="20000" enterkeyhint="done">
+      <button id="btn-add" type="submit" class="primary">Add</button>
+    </form>
+
+    <div class="toolbar">
+      <label for="search" class="visually-hidden">Search notes</label>
+      <input id="search" type="search" placeholder="Search  ( / )">
+      <button id="btn-export" type="button">Export</button>
+      <button id="btn-import" type="button">Import</button>
+      <input id="import-file" type="file" accept="application/json,.json" hidden>
+    </div>
+
+    <section id="empty-state" class="state" hidden>
+      <p id="empty-text">No notes yet. Type above and press Enter.</p>
+    </section>
+
+    <ul id="notes" class="notes" aria-label="Notes"></ul>
+
+    <p class="keys-hint">
+      <kbd>/</kbd> search · <kbd>Esc</kbd> clear · <kbd>&uarr;</kbd><kbd>&darr;</kbd> move ·
+      <kbd>Enter</kbd> edit · <kbd>Del</kbd> delete · <kbd>P</kbd> pin
+    </p>
+  </div>
+
+  <!-- Undo toast after a delete. -->
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden>
+    <span id="toast-text">Note deleted.</span>
+    <button id="toast-undo" type="button">Undo</button>
+  </div>
+
+  <script src="store.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

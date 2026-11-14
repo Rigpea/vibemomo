@@ -1,0 +1,12 @@
+node_modules/
+*.log
+.env
+.env.*
+!.env.example
+# runtime/local state never belongs in the studio repo
+.local/
+.local-server.log
+dist-app/
+.local-app.log
+# written by `npm run evidence` from this machine's Claude Code transcripts; it names their folder
+docs/evidence/model-participation.json

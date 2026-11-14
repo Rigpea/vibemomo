@@ -1,0 +1,48 @@
+/* Learning view (docs/DESIGN.md section 9; client/views/learning.js): the shelf of lessons on the left, the lesson in
+   its sandboxed frame in the middle, and under it the dock with the Companion (the Workbench's .dock rules in
+   views.css). The right panel (#collab) is the app grid's third column, as on the Workbench. The lesson's own look is
+   client/components/lesson-frame.js's. */
+.learn { flex: 1; min-height: 0; display: grid; grid-template-columns: var(--shelf-w, 216px) minmax(0, 1fr); }
+.learn-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.learn-main > .dock[hidden] { display: none; }
+
+/* ---------- the shelf ---------- */
+.learn-shelf { min-height: 0; display: flex; flex-direction: column; background: var(--panel); border-right: 1px solid var(--line); }
+.learn-shelf-head { display: flex; align-items: center; gap: var(--s2); min-height: var(--view-h); padding: 0 var(--s3) 0 var(--s4); border-bottom: 1px solid var(--line); }
+.learn-count { font-size: var(--fs-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
+.learn-list { list-style: none; margin: 0; padding: var(--s2); overflow-y: auto; flex: 1; min-height: 0; }
+.learn-list > .meta { padding: var(--s2); }
+.learn-item { position: relative; display: flex; align-items: flex-start; border-radius: var(--r1); }
+.learn-item + .learn-item { margin-top: 2px; }
+.learn-pick { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; text-align: left; background: transparent; border: 0; border-radius: var(--r1); color: var(--ink-2); cursor: pointer; transition: background var(--t); }
+.learn-pick:hover { background: var(--panel-2); color: var(--ink); }
+.learn-pick[aria-current="true"] { background: var(--panel-3); color: var(--ink); box-shadow: inset 2px 0 0 var(--accent); }
+.learn-pick-title { font-size: var(--fs-body); line-height: 1.35; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.learn-pick-meta { font-size: var(--fs-meta); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Delete waits until the row is pointed at or reached by keyboard, so the titles keep the width. */
+.learn-delete { flex: none; opacity: 0; margin: 4px 2px 0 0; transition: opacity var(--t); }
+.learn-item:hover .learn-delete, .learn-delete:focus-visible, .learn-item:focus-within .learn-delete { opacity: 1; }
+
+/* ---------- the display ---------- */
+.learn-display { flex: 1; min-width: 0; min-height: 120px; display: flex; flex-direction: column; background: var(--bg); }
+.learn-head { flex: none; display: flex; align-items: baseline; gap: var(--s3); min-height: var(--view-h); padding: var(--s2) var(--s5); border-bottom: 1px solid var(--line); }
+.learn-head:has(> .learn-title[hidden]) { border-bottom-color: transparent; }
+.learn-head > .spacer { flex: 1; }
+.learn-panel-slot { flex: none; align-self: center; display: flex; }
+.learn-title { font: 600 var(--fs-title)/1.3 var(--serif); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.learn-meta { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.learn-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.learn-body > .empty, .learn-body > .loading { margin: auto; }
+.learn-frame { flex: 1; width: 100%; min-height: 0; border: 0; background: var(--bg); display: block; }
+.learn-steps { flex: none; display: flex; align-items: center; gap: var(--s3); min-height: 48px; padding: var(--s2) var(--s5); border-top: 1px solid var(--line); background: var(--panel); }
+.learn-steps[hidden] { display: none; }
+.learn-step { font-size: var(--fs-meta); color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.learn-dots { display: flex; align-items: center; gap: 6px; }
+.learn-dot { width: 10px; height: 10px; padding: 0; border-radius: 50%; border: 1px solid var(--line-strong); background: transparent; cursor: pointer; transition: background var(--t), border-color var(--t); }
+.learn-dot:hover { border-color: var(--ink-2); }
+.learn-dot[aria-current="step"] { background: var(--accent); border-color: var(--accent); }
+
+@media (max-width: 1100px) {
+  .learn { grid-template-columns: 172px minmax(0, 1fr); }
+  .learn-head, .learn-steps { padding-left: var(--s4); padding-right: var(--s4); }
+}

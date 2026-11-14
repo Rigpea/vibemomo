@@ -1,0 +1,217 @@
+/* Room One — style.css
+   The stage is a 16:9 box that fits the window or frame, centred, up to twice
+   the game's native 960x540; the canvas fills it and game.js keeps the drawing
+   crisp. HTML overlays (HUD, help, pause, cleared, touch buttons) sit on top
+   of the canvas inside the same box. */
+
+:root {
+  --bg: #1d1e2c;
+  --ink: #23243a;
+  --muted: #5d5f78;
+  --card: rgba(255, 252, 246, 0.96);
+  --accent: #ff7a59;
+  --ok: #3fbf86;
+  --radius: 10px;
+  /* the stage's width; its height is this * 9 / 16 */
+  --stage-w: min(100vw, 100vh * 16 / 9, 1920px);
+  font-family: Inter, "Segoe UI", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+body {
+  display: grid;
+  place-items: center;
+}
+
+#stage {
+  position: relative;
+  width: var(--stage-w);
+  aspect-ratio: 16 / 9;
+  /* text scales with the stage so the HUD looks the same at any size */
+  font-size: clamp(11px, calc(var(--stage-w) / 60), 18px);
+  color: var(--ink);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+}
+
+#game {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+  touch-action: none;
+}
+
+/* ---------- HUD ---------- */
+#hud {
+  position: absolute;
+  inset: 4.5% 3% auto 3%;
+  display: flex;
+  flex-wrap: wrap; /* at most one wrap: objective above, controls below */
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35em 1em;
+  pointer-events: none;
+}
+#objective {
+  margin: 0;
+  padding: 0.45em 0.8em;
+  max-width: 100%;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: var(--radius);
+  font-weight: 600;
+  /* each HUD group stays on one line, so wrapping can never reach a third */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* tiny frames: the 11px floor would clip the longest objective with an ellipsis */
+@media (max-width: 420px) {
+  #objective { padding: 0.35em 0.6em; font-size: 0.85em; }
+}
+.hud-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  margin-left: auto;
+  white-space: nowrap;
+  pointer-events: auto;
+}
+#stats {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  margin-right: 0.4em;
+}
+
+button {
+  font: inherit;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(35, 36, 58, 0.15);
+  border-radius: 6px;
+  padding: 0.35em 0.75em;
+  cursor: pointer;
+  transition: background 120ms ease, transform 120ms ease;
+}
+button:hover { background: #fff; }
+button:active { transform: translateY(1px); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#btn-help { min-width: 2.2em; font-weight: 700; }
+
+/* ---------- Overlays ---------- */
+/* fixed, not absolute: the dim also covers any letterbox around the stage */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  background: rgba(29, 30, 44, 0.35);
+  animation: fade 160ms ease-out;
+}
+.overlay[hidden] { display: none; }
+.card {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 1.6em 2em;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+  text-align: center;
+  /* never larger than the stage; scrolling is only the last resort */
+  max-width: min(30em, calc(var(--stage-w) * 0.94));
+  max-height: calc(var(--stage-w) * 9 / 16 * 0.96);
+  overflow: auto;
+}
+.card h1, .card h2 { margin: 0 0 0.4em; font-size: 1.6em; }
+.lead { margin: 0 0 1em; color: var(--muted); }
+.result { font-size: 1.3em; font-variant-numeric: tabular-nums; margin: 0 0 1em; }
+.hint { margin: 0.8em 0 0; color: var(--muted); font-size: 0.85em; }
+.keys {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 0.45em 1em;
+  margin: 0 auto 1.2em;
+  text-align: left;
+  width: max-content;
+}
+.keys dt { text-align: right; }
+.keys dd { margin: 0; color: var(--muted); }
+kbd {
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 0.1em 0.4em;
+  border-radius: 4px;
+  background: #fff;
+  border: 1px solid rgba(35, 36, 58, 0.2);
+  border-bottom-width: 2px;
+  font: inherit;
+  font-size: 0.85em;
+  text-align: center;
+}
+button.primary {
+  background: var(--accent);
+  border-color: transparent;
+  color: #fff;
+  font-weight: 700;
+  padding: 0.5em 1.6em;
+}
+button.primary:hover { background: #ff8e72; }
+
+/* Small stages (under 600x338): the 11px floor would make the help card taller
+   than the stage. Tighten the spacing, let the card use the stage's width, and
+   scale everything inside it with the stage: all of it is in em. The 6px floor
+   keeps text from vanishing; only below it does the card have to scroll. */
+@media (max-width: 600px), (max-height: 338px) {
+  .card {
+    padding: 0.6em 1em;
+    max-width: calc(var(--stage-w) * 0.94);
+    font-size: max(6px, min(1em, calc(var(--stage-w) / 43)));
+  }
+  .card h1, .card h2 { margin-bottom: 0.2em; }
+  .lead { margin-bottom: 0.4em; }
+  .result { margin-bottom: 0.4em; }
+  .hint { margin-top: 0.3em; }
+  .keys { gap: 0.15em 1em; margin-bottom: 0.5em; }
+  kbd { border-radius: 0.27em; }
+  button.primary { padding: 0.35em 1.6em; }
+}
+
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+
+/* ---------- Touch controls (phones/tablets only) ---------- */
+#touch { display: none; }
+@media (pointer: coarse) {
+  #touch {
+    position: absolute;
+    inset: auto 3% 4% 3%;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    pointer-events: none;
+  }
+  #touch .pad { display: flex; gap: 0.8em; }
+  #touch button {
+    pointer-events: auto;
+    width: 4.2em;
+    height: 4.2em;
+    border-radius: 50%;
+    font-size: 1.2em;
+    background: rgba(255, 255, 255, 0.55);
+    touch-action: none;
+  }
+  #touch button.jump { width: 5em; height: 5em; font-weight: 700; }
+  #touch button.active { background: rgba(255, 255, 255, 0.9); transform: scale(0.95); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay { animation: none; }
+  button { transition: none; }
+}

@@ -1,0 +1,57 @@
+{
+  "name": "atelier",
+  "version": "0.3.29",
+  "description": "Atelier, an adaptive creative studio: build apps, sites, games, actions and audio with Claude; keep real versions, memory and a resumable Claude Code handoff.",
+  "type": "module",
+  "main": "app/main.cjs",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server/index.mjs",
+    "dev": "node --watch server/index.mjs",
+    "test": "node --test tests/",
+    "check": "node scripts/check.mjs",
+    "evidence": "node scripts/model-evidence.mjs",
+    "restart": "node scripts/restart.mjs",
+    "app": "electron .",
+    "app:build": "electron-builder --win portable",
+    "app:shortcut": "node scripts/desktop-shortcut.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.4.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "fflate": "^0.8.3",
+    "node-pty": "^1.1.0"
+  },
+  "devDependencies": {
+    "electron": "^45.2.2",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "local.atelier.studio",
+    "productName": "Atelier",
+    "directories": {
+      "output": "dist-app"
+    },
+    "files": [
+      "app/**",
+      "server/**",
+      "client/**",
+      "workbenches/**",
+      "templates/**",
+      "bin/**",
+      "package.json",
+      "node_modules/**"
+    ],
+    "asar": false,
+    "npmRebuild": false,
+    "win": {
+      "target": "portable",
+      "icon": "app/icon.png"
+    },
+    "artifactName": "Atelier-${version}-portable.${ext}"
+  }
+}

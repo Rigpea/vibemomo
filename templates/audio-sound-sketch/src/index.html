@@ -1,0 +1,34 @@
+<!doctype html>
+<!--
+  Sound Sketch — index.html
+  Plain page, plain script tags (no modules, no network), so it also runs when
+  this file is opened straight from disk (file://).
+  Load order matters: tuning.js (the numbers) -> sketch.js (everything else).
+-->
+<html lang="en" data-storage-key="sound-sketch">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Sound Sketch</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <h1>Sound Sketch</h1>
+    <div class="cues">
+      <button type="button" data-cue="tap">Tap <kbd>1</kbd></button>
+      <button type="button" data-cue="blip">Blip <kbd>2</kbd></button>
+      <button type="button" data-cue="tick">Tick <kbd>3</kbd></button>
+      <button type="button" data-cue="swell">Swell <kbd>4</kbd></button>
+    </div>
+    <p class="foot">
+      <button type="button" id="btn-mute" class="quiet" aria-pressed="false">Sound on</button>
+      <kbd>M</kbd>
+      <span id="status" role="status" aria-live="polite"></span>
+    </p>
+  </main>
+  <script src="tuning.js"></script>
+  <script src="sketch.js"></script>
+</body>
+</html>

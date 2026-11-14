@@ -1,0 +1,77 @@
+<!doctype html>
+<!--
+  Room One — index.html
+  Plain page, plain <script> tags (no modules, no network) so the game also
+  runs when this file is opened straight from disk (file://).
+  Load order matters: tuning.js -> audio.js -> game.js.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Room One</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="stage">
+    <canvas id="game" width="960" height="540" tabindex="0"
+            aria-label="Room One: a small platformer. Push the crate onto the plate, then leave through the door."></canvas>
+
+    <header id="hud">
+      <p id="objective" role="status" aria-live="polite">Push the crate onto the pressure plate to open the door.</p>
+      <div class="hud-right">
+        <span id="stats" aria-label="Time and jumps">0.0s · 0 jumps</span>
+        <button id="btn-help" type="button" title="Controls (?)" aria-label="Show controls">?</button>
+        <button id="btn-mute" type="button" title="Mute (M)" aria-pressed="false">Sound on</button>
+        <button id="btn-restart" type="button" title="Restart (R)">Restart</button>
+      </div>
+    </header>
+
+    <section id="help" class="overlay" aria-labelledby="help-title">
+      <div class="card">
+        <h1 id="help-title">Room One</h1>
+        <p class="lead">Push the crate onto the pressure plate. The door opens. Step through it.</p>
+        <dl class="keys">
+          <dt><kbd>&larr;</kbd> <kbd>&rarr;</kbd> or <kbd>A</kbd> <kbd>D</kbd></dt><dd>Move</dd>
+          <dt><kbd>Space</kbd> <kbd>&uarr;</kbd> <kbd>W</kbd></dt><dd>Jump (hold for higher)</dd>
+          <dt><kbd>R</kbd></dt><dd>Restart</dd>
+          <dt><kbd>P</kbd> or <kbd>Esc</kbd></dt><dd>Pause</dd>
+          <dt><kbd>M</kbd></dt><dd>Mute</dd>
+          <dt><kbd>?</kbd></dt><dd>Show this again</dd>
+        </dl>
+        <button id="btn-start" type="button" class="primary">Play</button>
+        <p class="hint">Or press any movement key.</p>
+      </div>
+    </section>
+
+    <section id="paused" class="overlay" hidden aria-labelledby="paused-title">
+      <div class="card">
+        <h2 id="paused-title">Paused</h2>
+        <button id="btn-resume" type="button" class="primary">Resume</button>
+        <p class="hint">P or Esc to resume.</p>
+      </div>
+    </section>
+
+    <section id="cleared" class="overlay" hidden aria-labelledby="cleared-title">
+      <div class="card">
+        <h2 id="cleared-title">Room cleared</h2>
+        <p class="result"><span id="cleared-time">0.00s</span> · <span id="cleared-jumps">0</span> jumps</p>
+        <button id="btn-again" type="button" class="primary">Play again</button>
+        <p class="hint">R or Enter to play again.</p>
+      </div>
+    </section>
+
+    <div id="touch" aria-hidden="true">
+      <div class="pad">
+        <button type="button" data-touch="left" tabindex="-1">&#9664;</button>
+        <button type="button" data-touch="right" tabindex="-1">&#9654;</button>
+      </div>
+      <button type="button" data-touch="jump" class="jump" tabindex="-1">Jump</button>
+    </div>
+  </main>
+
+  <script src="tuning.js"></script>
+  <script src="audio.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

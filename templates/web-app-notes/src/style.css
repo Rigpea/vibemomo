@@ -1,0 +1,167 @@
+/* Quick Notes — style.css
+   One column, phone first. Colours come from the custom properties below:
+   the light set is the default, the dark set replaces it when the system
+   asks for dark (prefers-color-scheme). Tap targets are at least 44px tall.
+   Animations switch off under prefers-reduced-motion. */
+
+:root {
+  --bg: #f7f6f3;
+  --panel: #ffffff;
+  --ink: #1d1d1f;
+  --muted: #6b6b70;
+  --line: #e2e0da;
+  --accent: #2f5bd3;
+  --accent-ink: #ffffff;
+  --pin: #fff6d6;
+  --pin-line: #e7cf74;
+  --ok: #217a3c;
+  --warn: #8a5a00;
+  --danger: #b3261e;
+  --focus: #2f5bd3;
+  --radius: 10px;
+  --tap: 44px;
+  font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #151517;
+    --panel: #1f1f23;
+    --ink: #ececf0;
+    --muted: #a0a0a8;
+    --line: #34343a;
+    --accent: #7c9cff;
+    --accent-ink: #0d1430;
+    --pin: #2c2716;
+    --pin-line: #6d5c1f;
+    --ok: #6fd18c;
+    --warn: #f0c060;
+    --danger: #ff8a80;
+    --focus: #9db4ff;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--ink); }
+[hidden] { display: none !important; }
+
+#app {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 16px max(16px, env(safe-area-inset-right)) 96px max(16px, env(safe-area-inset-left));
+}
+
+/* ---- header ---- */
+#top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 8px 0 16px; }
+h1 { font-size: 1.5rem; margin: 0; }
+.count { font-size: 0.9rem; font-weight: 400; color: var(--muted); margin-left: 8px; }
+.save-status { font-size: 0.85rem; color: var(--muted); white-space: nowrap; }
+.save-status[data-state="saving"] { color: var(--warn); }
+.save-status[data-state="saved"] { color: var(--ok); }
+.save-status[data-state="error"] { color: var(--danger); font-weight: 600; }
+
+/* ---- controls ---- */
+button, input, textarea { font: inherit; color: inherit; }
+button {
+  min-height: var(--tap);
+  min-width: var(--tap);
+  padding: 0 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  cursor: pointer;
+}
+button:hover { border-color: var(--muted); }
+button:disabled { opacity: 0.5; cursor: default; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+button.ghost { background: transparent; border-color: transparent; color: var(--muted); }
+button.ghost:hover { color: var(--ink); border-color: var(--line); }
+button.danger:hover { color: var(--danger); }
+
+input[type="text"], input[type="search"], textarea {
+  width: 100%;
+  min-height: var(--tap);
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+.composer { display: flex; gap: 8px; margin-bottom: 12px; }
+.composer input { flex: 1; font-size: 1.05rem; }
+.toolbar { display: flex; gap: 8px; margin-bottom: 16px; }
+.toolbar input { flex: 1; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ---- notes ---- */
+.notes { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.note {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  padding: 12px 8px 8px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.note.fresh { animation: appear 160ms ease-out; }   /* only the note just added */
+.note:focus { outline: none; }
+.note:focus-visible, .note:focus { box-shadow: 0 0 0 3px var(--focus); }
+.note.pinned { background: var(--pin); border-color: var(--pin-line); }
+.note .text {
+  grid-column: 1; margin: 0; cursor: text;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.note .meta { grid-column: 1; margin: 0; font-size: 0.8rem; color: var(--muted); }
+.note.pinned .meta::before { content: "Pinned \00b7  "; }
+.note .actions { grid-column: 2; grid-row: 1 / span 2; display: flex; gap: 2px; align-self: start; }
+.note .actions button { padding: 0 10px; }
+.note .edit { grid-column: 1 / -1; resize: vertical; }
+.note:has(.edit) .meta { grid-column: 1 / -1; }
+
+@keyframes appear { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+/* ---- states ---- */
+.state { padding: 24px 16px; text-align: center; color: var(--muted); border: 1px dashed var(--line); border-radius: var(--radius); }
+.error-state { text-align: left; color: var(--ink); border: 1px solid var(--danger); margin-bottom: 16px; }
+.error-state h2 { margin-top: 0; font-size: 1.15rem; color: var(--danger); }
+.banner {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 4px 4px 14px; margin-bottom: 12px;
+  border: 1px solid var(--warn); border-radius: var(--radius); background: var(--panel);
+}
+.banner p { flex: 1; margin: 0; }
+
+.toast {
+  position: fixed; left: 50%; bottom: max(16px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  display: flex; align-items: center; gap: 12px;
+  padding: 6px 6px 6px 16px; border-radius: var(--radius);
+  background: var(--ink); color: var(--bg);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+  animation: appear 160ms ease-out;
+}
+.toast button { background: transparent; color: var(--bg); border-color: var(--bg); font-weight: 600; }
+
+.keys-hint { margin-top: 24px; font-size: 0.8rem; color: var(--muted); text-align: center; }
+kbd { font: 0.75rem/1 ui-monospace, monospace; padding: 2px 5px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); }
+
+.visually-hidden {
+  position: absolute !important; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap;
+}
+
+/* ---- phone width ---- */
+@media (max-width: 480px) {
+  h1 { font-size: 1.25rem; }
+  .note { grid-template-columns: 1fr; }
+  .note .actions { grid-column: 1; grid-row: auto; justify-content: flex-end; }
+  .keys-hint { display: none; }         /* no physical keyboard, usually */
+  .toast { left: 16px; right: 16px; transform: none; justify-content: space-between; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

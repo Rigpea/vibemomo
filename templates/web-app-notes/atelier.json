@@ -1,0 +1,13 @@
+{
+  "kind": "web-app",
+  "name": "Quick Notes",
+  "entry": "src/index.html",
+  "build": { "type": "static", "dir": "src", "out": "dist" },
+  "readiness": [
+    "Capture a note in one action",
+    "Notes persist after reload",
+    "Edit and delete work",
+    "Empty and error states are clear",
+    "Usable on a phone width"
+  ]
+}

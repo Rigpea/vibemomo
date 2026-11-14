@@ -1,0 +1,101 @@
+/* Visualizer (docs/DESIGN.md section 14; components/visualizer-panel.js and visualizer-draw.js): the fourth part of
+   the Inspiration view. Two columns that scroll by themselves: what the project's stylesheets hold (colour, type,
+   spacing, radii, motion) and, beside it, what the person wants (the board's colours, the fixed rules). Rows under a
+   hairline and plain tiles, no cards. The studio's tokens only: every colour drawn here that is not a token is a
+   value read from the project, set by the script. Nothing moves: this part has no transition and no animation. */
+.viz { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.viz-scroll { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.viz-fill { margin: auto; }
+.viz-cols { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 340px; }
+.viz-main { min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--s6); padding: var(--s2) var(--s6) var(--s6); }
+.viz-side { min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--s6); padding: var(--s2) var(--s5) var(--s6); border-left: 1px solid var(--line); }
+
+/* ---------- a section: an overline with its count, then its values ---------- */
+.viz-section { display: flex; flex-direction: column; gap: var(--s3); min-width: 0; }
+.viz-section > .btn { align-self: flex-start; }
+.viz-h { display: flex; align-items: baseline; gap: var(--s2); margin: 0; }
+.viz-n { font-weight: 400; letter-spacing: 0; color: var(--muted); font-variant-numeric: tabular-nums; }
+.viz-sub { display: flex; align-items: baseline; gap: var(--s2); margin: 0; font-size: var(--fs-meta); font-weight: 500; line-height: 1.4; color: var(--ink-2); }
+.viz-group { display: flex; flex-direction: column; gap: var(--s2); }
+.viz-group + .viz-group { margin-top: var(--s3); }
+.viz-none, .viz-note, .viz-legend { margin: 0; font-size: var(--fs-meta); line-height: 1.45; color: var(--muted); max-width: 72ch; }
+.viz-none { color: var(--ink-2); }
+.viz-files { display: flex; flex-direction: column; gap: var(--s1); }
+
+/* ---------- words shared by every value: its name, where it is at home, how often, its marks ---------- */
+.viz-line { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--s2); min-width: 0; font-size: var(--fs-meta); line-height: 1.4; }
+.viz-name { color: var(--ink); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.viz-value, .viz-quiet { color: var(--muted); font-size: var(--fs-meta); }
+.viz-value { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.viz-token { color: var(--ink-2); overflow-wrap: anywhere; }
+.viz-val { color: var(--ink); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.viz-facts { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px var(--s2); min-width: 0; font-size: var(--fs-meta); }
+.viz-src.btn, .viz-count.btn { height: 22px; padding: 0 6px; font-weight: 400; color: var(--ink-2); }
+.viz-src.btn { font-size: var(--fs-xs); }
+.viz-facts > .btn:first-child, .viz-line > .btn:first-child { margin-left: -6px; }
+.viz-facts > .btn + .btn { margin-left: -6px; }
+/* A state is a word with a dot in its colour. Drift is told gently: a hollow dot and the muted ink. */
+.viz-mark { display: inline-flex; align-items: baseline; gap: 5px; font-size: var(--fs-meta); line-height: 1.4; color: var(--ink-2); }
+.viz-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--muted); position: relative; top: -1px; }
+.viz-mark.tone-ok .viz-dot { background: var(--ok); }
+.viz-mark.tone-warn .viz-dot { background: var(--warn); }
+.viz-mark.tone-danger .viz-dot { background: var(--danger); }
+.viz-mark.tone-drift { color: var(--muted); white-space: nowrap; }
+.viz-mark.tone-drift .viz-dot { background: transparent; box-shadow: inset 0 0 0 1.5px var(--muted); }
+
+/* ---------- colour: swatches by use; a custom property's other values stand at the swatch's right ---------- */
+.viz-colors, .viz-radii, .viz-easings { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(152px, 1fr)); gap: var(--s4) var(--s3); }
+.viz-color, .viz-radius, .viz-easing { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+.viz-swatch { align-self: stretch; height: 48px; margin-bottom: var(--s1); border: 1px solid var(--line-strong); border-radius: var(--r1); }
+.viz-alts { flex-wrap: nowrap; gap: var(--s1); max-width: 100%; }
+.viz-alts > .viz-value { margin-right: 2px; }
+
+/* ---------- type: each family in its own faces, then the sizes as a scale in the page's family ---------- */
+.viz-families, .viz-sizes, .viz-rows, .viz-board, .viz-rules, .viz-places { list-style: none; margin: 0; padding: 0; }
+.viz-family { display: flex; flex-direction: column; gap: var(--s1); min-width: 0; padding: var(--s3) 0; border-top: 1px solid var(--line); }
+.viz-sample { margin: 0; font-size: 22px; line-height: 1.3; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.viz-stack { color: var(--ink-2); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.viz-size { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; align-items: baseline; gap: var(--s3); padding: var(--s2) 0; border-top: 1px solid var(--line); }
+.viz-size.undrawn, .viz-row.undrawn { grid-template-columns: minmax(0, 1fr) auto; }
+.viz-size-sample { color: var(--ink); line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- spacing and durations: one bar a value. A length is drawn at its real size; a time against the longest ---------- */
+.viz-row { display: grid; grid-template-columns: 72px 176px minmax(0, 1fr); align-items: center; gap: var(--s3); min-height: 30px; padding: 2px 0; border-top: 1px solid var(--line); }
+.viz-track { display: flex; align-items: center; min-width: 0; }
+.viz-bar { display: block; height: 10px; background: var(--ink-2); border-radius: 0 2px 2px 0; }
+.viz-bar.cut { border-radius: 0; box-shadow: 3px 0 0 var(--bg), 5px 0 0 var(--ink-2); }
+
+/* ---------- radii as corners, easings as curves ---------- */
+.viz-corner { width: 48px; height: 48px; margin-bottom: var(--s1); background: var(--panel-2); border: 1px solid var(--line-strong); }
+.viz-corner.undrawn, .viz-curve.undrawn { border: 1px dashed var(--line-strong); background: transparent; }
+.viz-curve { display: block; width: 52px; height: 52px; margin-bottom: var(--s1); overflow: visible; }
+.viz-axis { fill: none; stroke: var(--line-strong); stroke-width: 1; }
+.viz-ease { fill: none; stroke: var(--ink-2); stroke-width: 2; stroke-linecap: round; }
+
+/* ---------- the side column: the board's colours and the fixed rules ---------- */
+.viz-card { display: flex; align-items: flex-start; gap: var(--s3); padding: var(--s2) 0; border-top: 1px solid var(--line); }
+.viz-card-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.viz-chip { flex: none; width: 28px; height: 28px; border: 1px solid var(--line-strong); border-radius: var(--r1); }
+.viz-chip.sm { width: 12px; height: 12px; border-radius: 3px; }
+.viz-rule { display: flex; flex-direction: column; gap: var(--s1); padding: var(--s3) 0; border-top: 1px solid var(--line); }
+.viz-rule > p { margin: 0; }
+.viz-rule-text { color: var(--ink); line-height: 1.45; text-wrap: pretty; overflow-wrap: anywhere; }
+.viz-rule-detail { font-size: var(--fs-meta); line-height: 1.45; color: var(--ink-2); overflow-wrap: anywhere; }
+.viz-rules.plain .viz-rule { padding: var(--s2) 0; }
+.viz-rules.plain .viz-rule-text { font-size: var(--fs-meta); color: var(--ink-2); }
+
+/* ---------- the dialogs: where a value is set and used; the task's request ---------- */
+.viz-detail { display: flex; flex-direction: column; gap: var(--s2); }
+.viz-detail > .viz-places { margin-bottom: var(--s3); }
+.viz-place { display: flex; align-items: center; gap: var(--s3); min-height: 30px; border-top: 1px solid var(--line); }
+.viz-place > .btn { flex: none; margin-left: -6px; }
+.viz-what { min-width: 0; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.viz-task .input { width: 100%; }
+.viz-task .note[hidden] { display: none; }
+
+/* Below 1100 px the two columns become one, and the whole part scrolls. */
+@media (max-width: 1100px) {
+  .viz-cols { display: block; overflow-y: auto; }
+  .viz-main, .viz-side { overflow: visible; padding-left: var(--s4); padding-right: var(--s4); }
+  .viz-side { border-left: 0; border-top: 1px solid var(--line); padding-top: var(--s5); }
+}
