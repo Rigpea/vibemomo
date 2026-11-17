@@ -10,3 +10,10 @@ dist-app/
 .local-app.log
 # written by `npm run evidence` from this machine's Claude Code transcripts; it names their folder
 docs/evidence/model-participation.json
+# Project briefs, personal studio data, and local editor/OS files
+.studio/
+.atelier/
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

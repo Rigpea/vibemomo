@@ -1,5 +1,6 @@
 // Path resolution and confinement. Every file operation on a project must go
 // through insideProject() so nothing escapes the project folder.
+import './env.cjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';

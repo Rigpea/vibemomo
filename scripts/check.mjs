@@ -1,5 +1,6 @@
 // `npm run check` — the proportional health check: syntax of every module,
 // template self-checks, the test suite, and (if running) the server's health.
+import '../server/lib/env.cjs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import path from 'node:path';
 import fsp from 'node:fs/promises';
@@ -25,7 +26,7 @@ async function walk(dir, exts, skip = ['node_modules', '.git', '.local', 'dist',
 }
 
 // 1. syntax
-const files = await walk(ROOT, ['.mjs', '.js']);
+const files = await walk(ROOT, ['.mjs', '.js', '.cjs']);
 let bad = 0;
 for (const f of files) {
   const r = spawnSync(process.execPath, ['--check', f], { encoding: 'utf8' });
@@ -34,7 +35,7 @@ for (const f of files) {
     console.log(`   syntax: ${path.relative(ROOT, f)}\n${r.stderr}`);
   }
 }
-record('syntax of all .mjs/.js files', bad === 0, `${files.length} files, ${bad} failures`);
+record('syntax of all .mjs/.js/.cjs files', bad === 0, `${files.length} files, ${bad} failures`);
 
 // 2. template self-checks
 const templates = path.join(ROOT, 'templates');

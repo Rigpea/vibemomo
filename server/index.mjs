@@ -48,12 +48,7 @@ import { appearanceFacts, saveAppearance } from './lib/appearance.mjs';
 import { resolveTools, publicTools, TOOL_KEYS } from './lib/devices/android-config.mjs';
 import { intentLine } from '../client/components/companion-words.js'; // a task summary's intent line (no request rides the bundle)
 
-// Optional .env beside the studio (gitignored): ATELIER_PORT, ATELIER_DATA_DIR, STUDIO_ANTHROPIC_API_KEY ...
-try {
-  if (await exists(path.join(STUDIO_DIR, '.env'))) process.loadEnvFile(path.join(STUDIO_DIR, '.env'));
-} catch (err) {
-  console.error('[atelier] .env not loaded:', err.message);
-}
+// paths.mjs loads the optional .env before resolving the server's paths and port.
 const pkg = await readJson(path.join(STUDIO_DIR, 'package.json'));
 const CLIENT_DIR = path.join(STUDIO_DIR, 'client');
 const WORKBENCH_DIR = path.join(STUDIO_DIR, 'workbenches');

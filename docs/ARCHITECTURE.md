@@ -6,6 +6,10 @@ workbenches (`workbenches/`) and project templates (`templates/`).
 
 ## 1. Processes and folders
 
+The optional repo-root `.env` is loaded by `server/lib/env.cjs` before paths or the port
+are captured. The server, CLI, Electron app, restart command, and health check share this
+configuration; shell environment variables take precedence. `.env` is never committed.
+
 ```
 atelier/                      studio source (this repo; git; tags studio/vX.Y.Z)
   server/index.mjs            HTTP + SSE companion on http://127.0.0.1:4747
@@ -503,6 +507,8 @@ Keyboard: every control reachable; visible focus ring; `?` opens shortcuts.
 - API key never leaves the server; never logged; never in the repo.
 - Budget pause blocks `/api/utility/*` only; everything else keeps working.
 - Studio source versions (git tags here) are separate from product versions.
+- Creating or importing a folder inside another repository initializes a separate Git root
+  for that project. An ancestor repository must never receive its checkpoints or restores.
 - Previews are served from the studio origin, so every product shares one localStorage/IndexedDB: templates namespace browser storage per project (`<html data-storage-key>` set to the slug at creation, when the template title/slug are replaced by the project name/slug), and side-by-side key mirroring relies on that same origin.
 - A preview that focuses itself on load does not take the keyboard from the studio: the load gives focus back unless the person pressed the preview or tried a version from its row (`client/components/preview-focus.js`, studio #32). It has three known limits. The listener inside the frame attaches on load, so a press between the new page committing and its load event is not seen and a slow page can need a second click; a product that focuses itself after its load event (for example on a timer) still takes the keyboard; and focus that reached the frame by Tab counts as not clicked, so a reload moves it out.
 

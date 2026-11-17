@@ -2,7 +2,7 @@
 // hard reset after a safety checkpoint. Everything is run with `git -C <dir>`.
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { HttpError } from './paths.mjs';
+import { HttpError, folderKey } from './paths.mjs';
 
 const execFileP = promisify(execFile);
 const GIT_ENV = {
@@ -26,8 +26,10 @@ export async function git(dir, args, { encoding = 'utf8', maxBuffer = 64 * 1024 
 }
 
 export async function isRepo(dir) {
-  const out = await git(dir, ['rev-parse', '--is-inside-work-tree'], { allowFail: true });
-  return out !== null && out.trim() === 'true';
+  // Being inside a parent's work tree is insufficient: checkpoints stage with -A,
+  // and restores reset the whole repo. Each project must own its repository root.
+  const out = await git(dir, ['rev-parse', '--show-toplevel'], { allowFail: true });
+  return out !== null && folderKey(out.trim()) === folderKey(dir);
 }
 
 export async function init(dir) {

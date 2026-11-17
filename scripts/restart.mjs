@@ -4,6 +4,7 @@
 // is node. Then starts a fresh detached server and waits for its health answer.
 // A pid file alone never authorises a kill: a pid written under WSL means nothing to
 // Windows (and can name an unrelated process), and the reverse.
+import '../server/lib/env.cjs';
 import path from 'node:path';
 import fsp from 'node:fs/promises';
 import { spawn, spawnSync } from 'node:child_process';
@@ -12,7 +13,7 @@ import { parsePidFile, listenerPids, processImage, isNodeImage, alive } from '..
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.ATELIER_PORT || 4747);
-const pidFile = path.join(ROOT, '.local', 'server.pid');
+const pidFile = path.resolve(ROOT, process.env.ATELIER_PID_FILE || path.join('.local', 'server.pid'));
 const logFile = path.join(ROOT, '.local-server.log');
 const mode = process.argv.includes('--stop') ? 'stop' : process.argv.includes('--status') ? 'status' : 'restart';
 // Each line carries its time, so .local/restart.log says when a restart ran (and whether one ran after a change).

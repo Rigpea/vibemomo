@@ -5,6 +5,7 @@
 //
 // Dev flag: --screenshot <path.png|path.jpg>  load, wait 1.5 s, capture the window, write, quit.
 'use strict';
+require('../server/lib/env.cjs');
 const { app, BrowserWindow, Tray, Menu, shell, ipcMain, nativeImage, dialog } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');

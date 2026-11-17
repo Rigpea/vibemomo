@@ -1,14 +1,21 @@
-# vibemomo
+# vibeMomo
 
 A local studio for vibe coding: you describe what you want, Claude Code builds it in a real
 folder, and you try it, compare it with the last version, and keep the one you like.
+
+**Early developer preview · Windows-first · MIT licensed**
+
+[Quick start](#start) · [User guide](docs/GUIDE.md) · [Architecture](docs/ARCHITECTURE.md) ·
+[Contributing](CONTRIBUTING.md)
+
+![The Atelier workbench running a sample notes project](docs/images/workbench.jpg)
 
 It runs on your own computer as a small Node server with a browser window. Your projects are
 ordinary folders with their own git history. vibemomo adds the things that usually get lost
 between prompts: what you liked, what must not change, what to build from, and every version
 you decided to keep.
 
-> **About the name.** vibemomo is the working name of this public copy. Inside the code and on
+> **About the name.** vibeMomo is the public name. Inside the code and on
 > the screen the studio is still called **Atelier**: the package, the `atelier` command, the
 > `ATELIER_*` settings and the `~/.atelier` data folder. This README uses the names you will
 > actually see and type.
@@ -79,9 +86,10 @@ carry them.
 ## Requirements
 
 - **Node.js 22 or later** and **git** on your PATH.
-- **Claude Code**, installed and signed in with your own account. The studio runs the `claude`
-  command you already have; it has no login of its own and does not touch yours. What a
-  session costs is whatever your Claude plan says.
+- **Claude Code**, installed and signed in with your own account, for AI-assisted building.
+  The studio runs the `claude` command on your PATH. It can use that sign-in or an optional
+  studio-specific token saved in Settings. What a session costs depends on your Claude plan.
+  You can explore the interface, templates, and version tools without starting an AI session.
 - **Windows 11** is where it was built and where the checks were run. The code has paths for
   macOS and Linux, but they have not been tried there.
 - Optional: the Codex CLI for the Codex tab; an Anthropic API key for the Budget utilities;
@@ -89,16 +97,16 @@ carry them.
 
 ## Start
 
-```
-git clone <this repository>
+```sh
+git clone https://github.com/rigpea/vibemomo.git
 cd vibemomo
-npm install
+npm ci
 npm start
 ```
 
 Then open http://127.0.0.1:4747.
 
-- `npm install` also downloads Electron, which the optional desktop window uses
+- `npm ci` installs the exact versions in the lockfile and also downloads Electron, which the optional desktop window uses
   (`npm run app`). The browser is enough.
 - `npm run check` runs the syntax check, the template self-checks and the tests.
 - New projects are created **beside** this folder, as its siblings. Set `ATELIER_PROJECTS_DIR`
@@ -106,6 +114,30 @@ Then open http://127.0.0.1:4747.
   `~/.atelier`; set `ATELIER_DATA_DIR` to move it. `.env.example` lists the settings.
 - The Memory view starts empty. The studio writes no preference for you: add how you like to
   work with **Add memory**, and the briefs Claude Code reads carry what you added.
+
+### Your first project
+
+1. Choose **New project** and start with the notes-app template.
+2. Open it in **Workbench** and press **Try** to use the preview.
+3. The studio saves **Initial version #1** automatically. Open **Versions** to inspect it.
+4. When ready to use Claude Code, create a task with a small change and review the result
+   in the preview. Use **More → Keep version** to save changed files, or restore your earlier checkpoint.
+
+### Configuration and troubleshooting
+
+Copy [`.env.example`](.env.example) to `.env` to change the port or data locations.
+Settings already exported in your shell take precedence. Restart the studio after editing it.
+No API key is needed to start the studio; the optional API utilities are billed separately.
+
+- **Port already in use:** set `ATELIER_PORT` in `.env`, then open that port in your browser.
+- **Claude Code missing:** confirm `claude --version` works in the same terminal used to start
+  the studio, then check the sign-in section in Settings.
+- **Terminal unavailable:** `node-pty` needs its native component. If npm says its install
+  scripts were blocked, review and allow that package's scripts, then reinstall. See the
+  [contribution guide](CONTRIBUTING.md#local-setup) for details.
+- **macOS or Linux:** these platforms are unverified. Reports with reproducible steps are welcome.
+- **Desktop packaging:** the optional Electron build toolchain has known dependency audit
+  findings. See [the current limitations](CONTRIBUTING.md#known-limitations) before building a binary.
 
 ## What is honest about it
 
@@ -146,4 +178,12 @@ machine; the file names their folder, so `.gitignore` keeps it out of git.
 
 ## Licence
 
-No licence has been chosen yet, so none is included.
+[MIT](LICENSE), copyright (c) 2026 rigpea. Dependencies retain their own licenses.
+The source repository stays marked `private` in `package.json` to prevent accidental npm
+publishing; this does not affect its GitHub visibility or MIT license.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup, checks, and how to propose a change.
+Report reproducible bugs through [GitHub Issues](https://github.com/rigpea/vibemomo/issues).
+Please remove credentials, personal project contents, and local paths from reports.

@@ -154,7 +154,9 @@ function scheduleStudio() {
 }
 
 async function selectProject(id) {
-  if (!id || id === state.activeProjectId) return;
+  // loadStudio can select the first newly created/imported project before its
+  // bundle has loaded. It still needs a real selection to populate the Workbench.
+  if (!id || (id === state.activeProjectId && state.bundle?.project?.id === id)) return;
   state.activeProjectId = id;
   state.bundle = null;
   state.bundleError = null; // the last project's error is not this one's
