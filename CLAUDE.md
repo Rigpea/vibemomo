@@ -10,7 +10,7 @@ screen.
 ```
 npm start          # server on http://127.0.0.1:4747 (.local/server.pid holds the PID)
 npm run check      # syntax + template self-checks + tests + server health
-npm test           # node --test tests/
+npm test           # node --test --test-reporter=spec "tests/*.test.mjs"
 npm run evidence   # which models ran in your own Claude Code sessions -> docs/evidence/model-participation.json
 node bin/atelier.mjs --help
 ```

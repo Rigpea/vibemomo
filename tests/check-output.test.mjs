@@ -14,7 +14,7 @@ test('a failing before hook: its message is shown and the passes of other files 
     await fsp.writeFile(path.join(dir, 'b.test.mjs'), "import { test, before } from 'node:test';\nbefore(() => { throw new Error('server did not start on port 1'); });\ntest('needs the server', () => {});\n");
     // Inside a test run the child would otherwise report in the runner's own binary format.
     const { NODE_TEST_CONTEXT, ...env } = process.env;
-    const r = spawnSync(process.execPath, ['--test', dir], { encoding: 'utf8', env });
+    const r = spawnSync(process.execPath, ['--test', '--test-reporter=spec', path.join(dir, 'a.test.mjs'), path.join(dir, 'b.test.mjs')], { encoding: 'utf8', env });
     assert.notEqual(r.status, 0);
     const shown = failureLines(r.stdout, r.stderr).join('\n');
     assert.match(shown, /server did not start on port 1/);

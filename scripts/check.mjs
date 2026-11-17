@@ -52,9 +52,11 @@ for (const t of await fsp.readdir(templates)) {
 }
 
 // 3. tests
-const t = spawnSync(process.execPath, ['--test', 'tests/'], { encoding: 'utf8', cwd: ROOT });
+// An explicit pattern works on Node 22 too; passing a directory only works on newer Node.
+// Fix the reporter so failure extraction also works in non-interactive CI output.
+const t = spawnSync(process.execPath, ['--test', '--test-reporter=spec', 'tests/*.test.mjs'], { encoding: 'utf8', cwd: ROOT });
 const summary = (t.stdout.match(/ℹ (tests|pass|fail) \d+/g) || []).join(' ');
-record('node --test tests/', t.status === 0, summary);
+record('test suite', t.status === 0, summary);
 if (t.status !== 0) for (const line of failureLines(t.stdout, t.stderr)) console.log(`   ${line}`);
 
 // 4. server health (optional)
