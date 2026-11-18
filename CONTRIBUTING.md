@@ -18,8 +18,8 @@ npm run check
 npm start
 ```
 
-Open http://127.0.0.1:4747. Windows is the initial supported development platform; macOS and
-Linux have code paths but have not been verified. Keep platform limitations explicit in reports.
+Open http://127.0.0.1:4747. The [platform setup guide](README.md#download-and-run) lists
+prerequisites for Windows, macOS and Linux. Include your OS and Node.js version in setup reports.
 
 The native terminal dependency is `node-pty`. If your npm version reports blocked install
 scripts, inspect them with `npm install-scripts ls` and, on versions supporting that command,
@@ -66,6 +66,6 @@ in [minimatch](https://github.com/advisories/GHSA-g3hv-75wg-m249) and
 [picomatch](https://github.com/advisories/GHSA-fc5q-39xc-vjpf).
 
 The suggested automated fix was a major downgrade of `electron-builder`; it has not been
-applied or validated. Re-run `npm audit` when changing packaging dependencies. A source
-checkout and browser session have been verified; packaged executables and macOS/Linux
-support have not. This is an early preview, not a hardened sandbox for untrusted projects.
+applied or validated. Re-run `npm audit` when changing packaging dependencies. The browser
+launch from the source ZIP has been checked on Windows and Ubuntu under WSL 2. Native macOS
+and packaged executables still need verification. Run this preview with projects you trust.

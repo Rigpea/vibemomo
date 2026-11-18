@@ -3,9 +3,9 @@
 A local studio for vibe coding: you describe what you want, Claude Code builds it in a real
 folder, and you try it, compare it with the last version, and keep the one you like.
 
-**Early developer preview · Windows-first · MIT licensed**
+**Early developer preview · Open source under the [MIT license](LICENSE)**
 
-[Quick start](#start) · [User guide](docs/GUIDE.md) · [Architecture](docs/ARCHITECTURE.md) ·
+[Download and run](#download-and-run) · [User guide](docs/GUIDE.md) · [Architecture](docs/ARCHITECTURE.md) ·
 [Contributing](CONTRIBUTING.md)
 
 ![The Atelier workbench running a sample notes project](docs/images/workbench.jpg)
@@ -19,6 +19,76 @@ you decided to keep.
 > the screen the studio is still called **Atelier**: the package, the `atelier` command, the
 > `ATELIER_*` settings and the `~/.atelier` data folder. This README uses the names you will
 > actually see and type.
+
+<a id="start"></a>
+
+## Download and run
+
+vibeMomo runs on your computer and opens in your browser. The current download is a source ZIP. You can try the templates, preview and version history without an API key.
+
+**[Download vibeMomo (.zip)](https://github.com/Rigpea/vibemomo/archive/refs/heads/main.zip)** · [Windows](#windows) · [macOS](#macos) · [Linux](#linux)
+
+All three platforms need **Node.js 22 or newer**, npm (included with Node.js), and Git. Git saves project versions even when you install from the ZIP. [Get Node.js](https://nodejs.org/en/download) · [Get Git](https://git-scm.com/install/)
+
+<details>
+<summary>Prefer to clone with Git?</summary>
+
+```sh
+git clone https://github.com/Rigpea/vibemomo.git
+cd vibemomo
+```
+
+With a clone, skip the ZIP extraction step below and run the commands in this folder. Use `git pull` to get future updates.
+
+</details>
+
+### Windows
+
+1. Install Node.js and Git for Windows using the links above.
+2. Right-click the downloaded ZIP and select **Extract All**. Open the `vibemomo-main` folder that contains `package.json`, then right-click an empty area and choose **Open in Terminal**.
+3. In PowerShell, run these commands.
+
+   ```powershell
+   npm.cmd ci --omit=dev
+   npm.cmd start
+   ```
+
+4. Open [the local studio](http://127.0.0.1:4747). Keep the terminal open while you use it. Press **Ctrl+C** there to stop.
+
+### macOS
+
+1. Install Node.js. For Git and the compiler tools, run `xcode-select --install` in Terminal and finish the installer if prompted.
+2. Double-click the ZIP in Finder. In Terminal, type `cd `, drag in the extracted `vibemomo-main` folder, and press **Return**.
+3. Run these commands.
+
+   ```sh
+   npm ci --omit=dev
+   npm start
+   ```
+
+4. Open [the local studio](http://127.0.0.1:4747). Press **Control+C** in Terminal to stop.
+
+### Linux
+
+1. Install Node.js 22 or newer. Run `node --version` to check the version. The embedded terminal also needs Python 3, Make and a C++ compiler. On Ubuntu or Debian, install Git and the build tools with `sudo apt install git python3 build-essential`. On Fedora, use `sudo dnf install git python3 make gcc-c++`.
+2. Extract the ZIP and open a terminal in `vibemomo-main`, the folder containing `package.json`.
+3. Run these commands.
+
+   ```sh
+   npm ci --omit=dev
+   npm start
+   ```
+
+4. Open [the local studio](http://127.0.0.1:4747). Press **Ctrl+C** in the terminal to stop.
+
+The browser launch from the public ZIP was checked on Windows and on Ubuntu under WSL 2. Native macOS verification is still pending.
+
+### Your first project
+
+1. Choose **New project**, select the notes-app template, then open **Workbench → Try** to use the preview.
+2. Open **Versions** to see the first saved version. To ask an agent to change the app, install Claude Code and sign in on your own account. Check that `claude --version` works in the terminal you use to start the studio.
+3. Review the change in the preview. Use **More → Keep version** to save it, or restore an earlier checkpoint.
+
 
 ## What you do in it
 
@@ -83,45 +153,16 @@ carry them.
 
 `docs/ARCHITECTURE.md` describes every contract; `docs/DESIGN.md` describes the look.
 
-## Requirements
+## Optional tools and settings
 
-- **Node.js 22 or later** and **git** on your PATH.
-- **Claude Code**, installed and signed in with your own account, for AI-assisted building.
-  The studio runs the `claude` command on your PATH. It can use that sign-in or an optional
-  studio-specific token saved in Settings. What a session costs depends on your Claude plan.
-  You can explore the interface, templates, and version tools without starting an AI session.
-- **Windows 11** is where it was built and where the checks were run. The code has paths for
-  macOS and Linux, but they have not been tried there.
-- Optional: the Codex CLI for the Codex tab; an Anthropic API key for the Budget utilities;
-  the Android SDK for the phone tab.
-
-## Start
-
-```sh
-git clone https://github.com/rigpea/vibemomo.git
-cd vibemomo
-npm ci
-npm start
-```
-
-Then open http://127.0.0.1:4747.
-
-- `npm ci` installs the exact versions in the lockfile and also downloads Electron, which the optional desktop window uses
-  (`npm run app`). The browser is enough.
-- `npm run check` runs the syntax check, the template self-checks and the tests.
+- **Desktop window.** From the same source folder, run `npm ci` to include Electron, then `npm run app`. In Windows PowerShell use `npm.cmd ci` and `npm.cmd run app`.
+- **AI and device tools.** Claude Code can use your CLI sign-in or a studio-specific token saved in Settings. Session costs depend on your Claude plan. The Codex tab uses the Codex CLI, Budget utilities use an Anthropic API key, and the Android phone tab uses the Android SDK.
+- **Development checks.** After a full `npm ci`, use `npm run check` for syntax checks, template checks and tests.
 - New projects are created **beside** this folder, as its siblings. Set `ATELIER_PROJECTS_DIR`
   to choose another place. The studio's own data (project list, memory, settings) goes to
   `~/.atelier`; set `ATELIER_DATA_DIR` to move it. `.env.example` lists the settings.
 - The Memory view starts empty. The studio writes no preference for you: add how you like to
   work with **Add memory**, and the briefs Claude Code reads carry what you added.
-
-### Your first project
-
-1. Choose **New project** and start with the notes-app template.
-2. Open it in **Workbench** and press **Try** to use the preview.
-3. The studio saves **Initial version #1** automatically. Open **Versions** to inspect it.
-4. When ready to use Claude Code, create a task with a small change and review the result
-   in the preview. Use **More → Keep version** to save changed files, or restore your earlier checkpoint.
 
 ### Configuration and troubleshooting
 
@@ -135,7 +176,7 @@ No API key is needed to start the studio; the optional API utilities are billed 
 - **Terminal unavailable:** `node-pty` needs its native component. If npm says its install
   scripts were blocked, review and allow that package's scripts, then reinstall. See the
   [contribution guide](CONTRIBUTING.md#local-setup) for details.
-- **macOS or Linux:** these platforms are unverified. Reports with reproducible steps are welcome.
+- If installation falls back to compiling `node-pty`, install Python 3 and the C++ toolchain for your platform. On Windows, select **Desktop development with C++** in Visual Studio Build Tools. On macOS, use the Xcode Command Line Tools.
 - **Desktop packaging:** the optional Electron build toolchain has known dependency audit
   findings. See [the current limitations](CONTRIBUTING.md#known-limitations) before building a binary.
 
@@ -178,9 +219,9 @@ machine; the file names their folder, so `.gitignore` keeps it out of git.
 
 ## Licence
 
-[MIT](LICENSE), copyright (c) 2026 rigpea. Dependencies retain their own licenses.
-The source repository stays marked `private` in `package.json` to prevent accidental npm
-publishing; this does not affect its GitHub visibility or MIT license.
+Copyright © 2026 rigpea. You can use, modify and redistribute vibeMomo, including commercially.
+Keep the copyright and permission notice with copies or substantial portions of the software.
+Dependencies retain their own licenses. [Read the MIT license](LICENSE).
 
 ## Contributing
 
