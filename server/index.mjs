@@ -45,7 +45,8 @@ import * as inspiration from './lib/inspiration.mjs';
 import * as rules from './lib/rules.mjs';
 import * as references from './lib/references.mjs';
 import { visualizerAnswer } from './lib/visualizer.mjs';
-import { appearanceFacts, saveAppearance } from './lib/appearance.mjs';
+import { appearanceFacts, saveAppearance, applyLook, resetLook, undoLook } from './lib/appearance.mjs';
+import { LOOK_BOARD } from './lib/studio-look.mjs';
 import { resolveTools, publicTools, TOOL_KEYS } from './lib/devices/android-config.mjs';
 import { intentLine } from '../client/components/companion-words.js'; // a task summary's intent line (no request rides the bundle)
 
@@ -553,6 +554,36 @@ route('GET', '/api/projects/:id/inspiration/files/:name', async ({ params, res }
   res.end(f.buf);
 });
 
+// ----- the Studio look board (~/.atelier/studio-look.json and studio-look/; server/lib/studio-look.mjs, section 27) -----
+// The same board as a project's, at the person's own place: the same cards, limits and guards, and no brief reads it.
+const lookBoardChanged = (what) => emit('studio-look.changed', what);
+route('GET', '/api/studio-look/board', async () => inspiration.boardAnswer(LOOK_BOARD));
+route('POST', '/api/studio-look/board', async ({ body }) => {
+  const card = await inspiration.addCard(LOOK_BOARD, body);
+  lookBoardChanged({ cardId: card.id, action: 'added' });
+  return card;
+}, { bodyLimit: inspiration.BODY_LIMIT });
+route('POST', '/api/studio-look/board/move', async ({ body }) => {
+  const out = await inspiration.moveCard(LOOK_BOARD, body);
+  lookBoardChanged({ cardId: body?.id, action: 'moved' });
+  return out;
+});
+route('PATCH', '/api/studio-look/board/:cid', async ({ params, body }) => {
+  const card = await inspiration.patchCard(LOOK_BOARD, params.cid, body);
+  lookBoardChanged({ cardId: card.id, action: 'changed' });
+  return card;
+});
+route('DELETE', '/api/studio-look/board/:cid', async ({ params }) => {
+  const out = await inspiration.removeCard(LOOK_BOARD, params.cid);
+  lookBoardChanged({ cardId: params.cid, action: 'removed' });
+  return out;
+});
+route('GET', '/api/studio-look/board/files/:name', async ({ params, res }) => {
+  const f = await inspiration.readCardFile(LOOK_BOARD, params.name);
+  res.writeHead(200, inspiration.fileHeaders(f));
+  res.end(f.buf);
+});
+
 // ----- fixed rules (.studio/rules.json; server/lib/rules.mjs, section 23): what must stay the same in the project's design -----
 /** A rule came, changed or went: the briefing lists the rules, so it is written again; the change reaches the open views. */
 async function rulesChanged(projectId, what) {
@@ -800,9 +831,10 @@ route('PATCH', '/api/settings', async ({ body }) => {
   let workerModel;
   let appearance;
   ({ workerModel, appearance, ...body } = body);
+  delete body.lookUndo; // the Studio look's own (its Apply and Reset keep it), never set through this route
   if (workerModel !== undefined) await setStudioWorkerModel(workerModel);
-  // The look has its own check and write too (server/lib/appearance.mjs): an option that does not exist, an accent
-  // under AA contrast or a control a fixed rule locks is refused there and nothing is written.
+  // The look has its own check and write too (server/lib/appearance.mjs): an option that does not exist or a colour
+  // under AA contrast is refused there and nothing is written.
   if (appearance !== undefined) await saveAppearance(appearance);
   const settings = await updateRegistry((reg) => {
     const devices = body.devices ? { ...(reg.settings.devices || {}), ...body.devices, android: { ...(reg.settings.devices?.android || {}), ...(body.devices.android || {}) } } : reg.settings.devices;
@@ -813,8 +845,13 @@ route('PATCH', '/api/settings', async ({ body }) => {
   emit('status', { settings: true });
   return settings;
 });
-// The look alone, with what a fixed rule locks: { stored, effective, locks, rulesProject, rulesUnread } (section 24).
+// The look alone, with the studio's locked tokens: { stored, effective, locked, rulesProject, rulesUnread, undo } (section 24).
 route('GET', '/api/settings/appearance', async () => appearanceFacts());
+// The Studio look's Apply, Reset and Undo (section 27): Apply and Reset keep the look before them, Undo brings it back.
+const lookChanged = (facts) => { emit('status', { settings: true }); return facts; };
+route('POST', '/api/studio-look/apply', async ({ body }) => lookChanged(await applyLook(body?.look)));
+route('POST', '/api/studio-look/reset', async () => lookChanged(await resetLook()));
+route('POST', '/api/studio-look/undo', async () => lookChanged(await undoLook()));
 route('GET', '/api/templates', async () => projects.listTemplates());
 // The companion's atelier_studio_show (docs/ARCHITECTURE.md section 11): the open windows move, nothing is stored.
 // delivered counts the event streams open now, so the tool can say when no window received it.

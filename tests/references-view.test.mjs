@@ -115,8 +115,10 @@ test('the references are a part of the Inspiration view with their own address; 
   assert.match(view, /ui\.refsHost\.hidden = mode !== 'references';/);
   assert.match(view, /ui\.refs\.unmount\(\);/);
   // Off the board its hands are still: a paste or a drop there must not add a card (the board's own guards).
-  assert.match(view, /if \(!ui \|\| !ui\.pid \|\| ui\.mode !== 'board' \|\| document\.querySelector\('dialog\[open\]'\)\) return;/);
-  assert.match(view, /return !!ui\?\.pid && ui\.mode === 'board' && !types\.includes\(CARD_DRAG\)/);
+  assert.match(view, /if \(!boardReady\(\) \|\| document\.querySelector\('dialog\[open\]'\)\) return;/);
+  assert.match(view, /return boardReady\(\) && !types\.includes\(CARD_DRAG\)/);
+  assert.match(view, /const boardReady = \(\) => !!ui && boardish\(ui\.mode\) && !!ui\.boardKey;/, 'only a board part (the app\'s or the Studio look) takes a paste or a drop');
+  assert.match(view, /const boardish = \(mode\) => mode === 'board' \|\| mode === 'look';/);
   // An emptied link title asks the page again, and the dialog answers a refusal itself.
   assert.match(edit, /if \(entry && kind === 'link' && patch\.title === '' && !patch\.url\) patch\.refetch = true;/);
   assert.match(edit, /noValidate: true/);
@@ -132,7 +134,7 @@ test('the part keeps the design rules: one primary button in sight, one Copy on 
   assert.equal(panel.match(/variant: 'primary'/g).length, 1);
   assert.match(view, /ui\.refs\.addButton\.hidden = mode !== 'references';/);
   assert.match(view, /ui\.rules\.addButton\.hidden = mode !== 'rules';/);
-  assert.match(view, /for \(const node of \[ui\.form, ui\.bar, ui\.scroll\]\) node\.hidden = mode !== 'board';/);
+  assert.match(view, /for \(const node of \[ui\.form, ui\.bar, ui\.main\]\) node\.hidden = !boardish\(mode\);/);
   assert.equal(panel.match(/button\('Copy'/g).length, 1, 'one Copy button in a row');
   assert.match(panel, /const copies = entry\.kind === 'prompt' \|\| entry\.kind === 'snippet';/);
   assert.doesNotMatch(panel + edit, /stateChip|\.chip|chip\(/, 'a kind and a tag are words, never chips');

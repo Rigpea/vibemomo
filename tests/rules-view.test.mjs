@@ -70,8 +70,10 @@ test('the rules are a part of the Inspiration view with their own address; the r
   assert.match(view, /segBtn\('board', 'Board'\), segBtn\('rules', 'Fixed rules', rulesN\)/);
   assert.match(view, /ui\.rules\.unmount\(\);/);
   // While the rules are shown the board's hands are still: a paste or a drop there must not add a card.
-  assert.match(view, /if \(!ui \|\| !ui\.pid \|\| ui\.mode !== 'board' \|\| document\.querySelector\('dialog\[open\]'\)\) return;/);
-  assert.match(view, /return !!ui\?\.pid && ui\.mode === 'board' && !types\.includes\(CARD_DRAG\)/);
+  assert.match(view, /if \(!boardReady\(\) \|\| document\.querySelector\('dialog\[open\]'\)\) return;/);
+  assert.match(view, /return boardReady\(\) && !types\.includes\(CARD_DRAG\)/);
+  assert.match(view, /const boardReady = \(\) => !!ui && boardish\(ui\.mode\) && !!ui\.boardKey;/, 'only a board part (the app\'s or the Studio look) takes a paste or a drop');
+  assert.match(view, /const boardish = \(mode\) => mode === 'board' \|\| mode === 'look';/);
   assert.match(view, /if \(mode !== ui\.mode\) \{ stopPicking\(\); setDropping\(false\); \}/);
 });
 
@@ -82,7 +84,7 @@ test('the part keeps the design rules: one primary button in sight, no chip, tok
   const css = await read('client/inspiration.css');
   // Add (the board) and Add rule (the rules) are never on screen together: each part hides the other's.
   assert.equal(panel.match(/variant: 'primary'/g).length, 1);
-  assert.match(view, /for \(const node of \[ui\.form, ui\.bar, ui\.scroll\]\) node\.hidden = mode !== 'board';/);
+  assert.match(view, /for \(const node of \[ui\.form, ui\.bar, ui\.main\]\) node\.hidden = !boardish\(mode\);/);
   assert.match(view, /ui\.rules\.addButton\.hidden = mode !== 'rules';/);
   assert.doesNotMatch(panel + edit, /stateChip|\.chip|chip\(/, 'a kind and a lock are words, never chips');
   for (const file of [view, panel, edit]) assert.ok(file.split('\n').length <= 500, 'files stay under about 500 lines');

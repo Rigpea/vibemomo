@@ -1,9 +1,9 @@
 // Settings › Appearance (docs/DESIGN.md section 12, docs/ARCHITECTURE.md section 24), driven in a real window: the
 // section and its five controls, each choice applied live to the computed styles and kept by the route, the focus
 // staying on the pressed button, a preset, a hex that fails AA kept as a proposal with the nearest shade, a colour
-// card of the open project's board as a preset, the picker's live preview, a real reload that finds the look, the
-// light theme's own shade, a fixed rule of the studio project that locks a control (disabled, the rule named, the
-// route's 409), Reset with Undo, and two looks captured at 1280×720 and 1920×1080.
+// card of the person's Studio look board as a preset, the picker's live preview, a real reload that finds the look,
+// the light theme's own shade, a fixed rule of the studio project that locks --accent (named in one line, never
+// disabling a control or refusing the look: decision row 186), Reset with Undo, and two looks captured at 1280×720 and 1920×1080.
 // A private server (temp data and projects, a port the system picks): it never touches the studio on 4747 or
 // ~/.atelier. Offscreen.
 // Run: node_modules/electron/dist/electron.exe scripts/ui-check/verify-appearance.cjs
@@ -56,7 +56,9 @@ async function main() {
   }
   const studio = (await api('POST', '/api/projects', { name: 'Studio Check', kind: 'studio' })).data.project;
   const one = (await api('POST', '/api/projects', { name: 'Look Check', kind: 'web-app', template: 'web-app-notes' })).data.project;
-  for (const card of [{ kind: 'note', text: 'Quiet surfaces, one accent' }, { kind: 'color', hex: '#232221', name: 'canvas' }, { kind: 'color', hex: '#79b3dc', name: 'sky' }, { kind: 'color', hex: '#5fbcab', name: 'teal' }]) await api('POST', `/api/projects/${one.id}/inspiration`, card);
+  // The presets come from the person's Studio look board, never from a project's app board.
+  await api('POST', `/api/projects/${one.id}/inspiration`, { kind: 'color', hex: '#7a4b2a', name: 'walnut' });
+  for (const card of [{ kind: 'note', text: 'Quiet surfaces, one accent' }, { kind: 'color', hex: '#232221', name: 'canvas' }, { kind: 'color', hex: '#79b3dc', name: 'sky' }, { kind: 'color', hex: '#5fbcab', name: 'teal' }]) await api('POST', '/api/studio-look/board', card);
   await api('POST', `/api/projects/${one.id}/activate`);
   const stored = async () => (await api('GET', '/api/settings/appearance')).data;
 
@@ -86,7 +88,7 @@ async function main() {
   check('Settings opens on Appearance, with Layout as the next section', sections[0] === 'Appearance' && sections[1] === 'Layout', sections);
   check('the section has its five controls, each at its default, and Reset has nothing to do', first?.labels.join() === 'Accent,Density,Text size,Corners,Motion' && first.density.join() === '[Comfortable],Compact' && first.textSize.join() === 'Small,[Default],Large,Larger' && first.radius.join() === 'Sharp,[Soft],Round' && first.motion.join() === '[Normal],Reduced' && first.reset === true, first);
   check('the accent starts on the studio\'s own, with six presets and the line saying its contrast', first.pick === '#d6a455' && first.hex === '#d6a455' && first.presets.length === 6 && first.presets[0] === '[Amber, #d6a455]' && /^#d6a455 is \d+\.\d:1 against the dark canvas \(text in the accent needs 4\.5:1\)\. The light theme shows #a86f17\.$/.test(first.note || ''), [first.pick, first.presets, first.note]);
-  check('the open project\'s colour cards are offered as presets, named for the project', first.boardLabel === 'From Look Check\'s board' && first.board.join(' | ') === 'teal, #5fbcab | sky, #79b3dc | canvas, #232221', [first.boardLabel, first.board]);
+  check('the Studio look board\'s colour cards are offered as presets, not the project\'s', first.boardLabel === 'From your Studio look board' && first.board.join(' | ') === 'teal, #5fbcab | sky, #79b3dc | canvas, #232221', [first.boardLabel, first.board]);
   const painted = await js(`[...document.querySelectorAll('#appearance .look-swatch')].map((b) => getComputedStyle(b).backgroundColor)`);
   check('every swatch is painted in its own colour', painted.length === 9 && painted[0] === 'rgb(214, 164, 85)' && painted[4] === 'rgb(121, 179, 220)' && painted[8] === 'rgb(35, 34, 33)' && new Set(painted.slice(0, 6)).size === 6, painted);
   check('the defaults on the page: 32 px buttons, 14 px text, 6 px corners, 140 ms', firstLook.btnH === 32 && firstLook.body === '14px' && firstLook.btnR === '6px' && firstLook.t === '140ms' && firstLook.top === 44 && firstLook.accent === '#d6a455', firstLook);
@@ -177,28 +179,22 @@ async function main() {
   await shot('appearance-06-look-a-light-1280.jpg');
   await js(`document.getElementById('theme-toggle').click()`); await sleep(700);
 
-  // The fixed rules win: a rule of the studio project that locks --accent takes the control away, in this window too.
+  // A rule of the studio project that locks --accent binds the studio's source, not the person's look (decision row 186):
+  // nothing is disabled or refused, and one line says the look differs from the locked default.
   const rule = (await api('POST', `/api/projects/${studio.id}/rules`, { text: 'Amber is the one accent: the primary action, links, focus and the selected item', kind: 'color', token: { name: '--accent', value: '#d6a455' } })).data;
   await sleep(1800);
   const locked = await js(panel);
   const lockedLook = await js(look);
-  check('a rule that locks --accent disables the picker, the hex field and every swatch without a reload', locked.pickOff && locked.hexOff && locked.presets.every((p) => p.endsWith('×')) && locked.board.every((p) => p.endsWith('×')), locked);
-  check('the sentence beside it names the rule, the token and its value', locked.locks.length === 1 && locked.locks[0].startsWith('Accent is fixed by Studio Check\'s rule "Amber is the one accent: the primary action, links, focus and the selected item", which locks --accent at #d6a455.') && locked.locks[0].endsWith('Show the rule'), locked.locks);
-  check('the stored accent is out of effect: the page is back on the studio\'s amber, the other choices stay', lockedLook.accent === '#d6a455' && lockedLook.btnH === 28 && lockedLook.btnR === '10px' && locked.density.join() === 'Comfortable,[Compact]', lockedLook);
+  check('a rule that locks --accent disables nothing: the picker, the hex field and every swatch stay free', !locked.pickOff && !locked.hexOff && locked.presets.every((p) => !p.endsWith('×')) && locked.board.every((p) => !p.endsWith('×')), locked);
+  check('one line says the look sets --accent away from the locked default', locked.locks.length === 1 && locked.locks[0] === 'Your look sets --accent away from Studio Check\'s locked default. Those locks bind the studio\'s source code; your look is a layer on top, for you only.', locked.locks);
+  check('the stored accent stays in effect, and the other choices too', lockedLook.accent === '#d68aa6' && lockedLook.btnH === 28 && lockedLook.btnR === '10px', lockedLook);
   const around = await js(`fetch('/api/settings', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ appearance: { accent: { dark: '#5fbcab' } } }) }).then(async (r) => ({ status: r.status, body: await r.json() }))`);
-  check('the route refuses the locked control too, naming the rule', around.status === 409 && around.body.error.code === 'token_locked' && around.body.error.message.includes('which locks --accent at #d6a455'), around);
+  check('the route keeps a new accent though the rule locks --accent', around.status === 200 && around.body.appearance?.accent?.dark === '#5fbcab', around);
   await shot('appearance-07-locked-accent-1280.jpg');
-  const motionRule = (await api('POST', `/api/projects/${studio.id}/rules`, { text: 'Motion stays at 140 ms', kind: 'motion', token: { name: '--t', value: '140ms' } })).data;
-  await sleep(1800);
-  const locked2 = await js(panel);
-  check('a second rule, on --t, takes Motion; Density, Text size and Corners stay free', locked2.motion.join() === '[Normal]×,Reduced×' && locked2.locks.length === 2 && locked2.density.every((b) => !b.endsWith('×')) && locked2.radius.every((b) => !b.endsWith('×')), locked2);
-  await press('[data-look="radius"] .seg button[data-v="soft"]');
-  check('a free control still changes while others are locked', (await js(look)).btnR === '6px' && (await stored()).stored.radius === undefined);
+  await api('PATCH', '/api/settings', { appearance: { accent: { dark: '#d68aa6' } } });
   await api('DELETE', `/api/projects/${studio.id}/rules/${rule.id}`);
-  await api('DELETE', `/api/projects/${studio.id}/rules/${motionRule.id}`);
   await sleep(1800);
-  const freed = await js(panel);
-  check('with the rules gone the controls are free again and the stored accent is back in effect', !freed.pickOff && freed.locks.length === 0 && (await js(look)).accent === '#d68aa6' && freed.motion.join() === '[Normal],Reduced', [freed.locks, freed.motion]);
+  check('with the rule gone the line goes too', (await js(panel)).locks.length === 0 && (await js(look)).accent === '#d68aa6', (await js(panel)).locks);
 
   // Look B (comfortable, larger text, sharp, teal), then the layout at three widths.
   await press('[data-look="density"] .seg button[data-v="comfortable"]');

@@ -40,7 +40,7 @@ const state = {
   endedRun: null, // the last run a runs.changed event reported ended: the chip names it until clicked or another ends
   narrowPanelOpen: false, // below 1100 px the Task | Focus panel is an overlay: open only on request, never stored
   lessonWanted: null, // { projectId, id }: the lesson a studio.show asked for, taken by the Learning view when it shows
-  // The person's look (Settings, Appearance): GET /api/state's { stored, effective, locks, rulesProject, rulesUnread };
+  // The person's look (Settings, Appearance; Inspiration, Studio look): GET /api/state's { stored, effective, locked, rulesProject, rulesUnread, undo };
   // null until a server that knows it has answered. lookPreview: choices shown before they are saved (a colour being picked).
   appearance: null,
   lookPreview: null,
@@ -218,6 +218,7 @@ function connectEvents() {
   es.addEventListener('pins.changed', (e) => emit('pins', data(e))); // the Companion tab's pin list
   es.addEventListener('lessons.changed', (e) => emit('lessons', data(e))); // the Learning view's shelf and open lesson
   es.addEventListener('inspiration.changed', (e) => emit('inspiration', data(e))); // the Inspiration view's board
+  es.addEventListener('studio-look.changed', (e) => emit('studio-look', data(e))); // the Studio look board (section 27)
   es.addEventListener('rules.changed', (e) => emit('rules', data(e))); // the Inspiration view's fixed rules
   es.addEventListener('rules.changed', scheduleStudio); // a rule can lock a token of the look: the state names the locks
   es.addEventListener('references.changed', (e) => emit('references', data(e))); // the Inspiration view's references

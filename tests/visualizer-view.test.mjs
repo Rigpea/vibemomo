@@ -133,7 +133,7 @@ test('the Visualizer is a part of the Inspiration view with its own address; it 
   assert.match(view, /const VIZ_HASH = '#\/inspiration\/visualizer';/);
   assert.equal(('#/inspiration/visualizer'.match(/^#\/([\w-]+)/) || [])[1], 'inspiration', 'the router still reads the view from the address');
   assert.match(view, /segBtn\('references', 'References', refsN\), segBtn\('visualizer', 'Visualizer'\)\);/, 'four parts, the most a segmented control takes');
-  assert.match(view, /names\(RULES_HASH\) \? 'rules' : names\(REFS_HASH\) \? 'references' : names\(VIZ_HASH\) \? 'visualizer' : 'board'/);
+  assert.match(view, /names\(RULES_HASH\) \? 'rules' : names\(REFS_HASH\) \? 'references' : names\(VIZ_HASH\) \? 'visualizer' : names\(LOOK_HASH\) \? 'look' : 'board'/);
   assert.match(view, /ui\.vizHost\.hidden = mode !== 'visualizer';/);
   assert.match(view, /ui\.viz\.taskButton\.hidden = ui\.viz\.readButton\.hidden = mode !== 'visualizer';/);
   assert.match(view, /ui\.viz\.show\(mode === 'visualizer'\);/);

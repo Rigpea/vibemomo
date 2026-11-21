@@ -149,6 +149,7 @@ test('the view keeps the design rules: one primary button, tags as words, motion
   assert.match(view, /document\.addEventListener\('paste', onPaste\)/);
   assert.match(view, /root\.addEventListener\('drop', /);
   assert.match(view, /catch \(err\) \{\n    toastError\(err, 'Inspiration'\);/);
-  assert.match(view, /confirmDialog\(\{ title: 'Remove card', message: removeWords\(card, projectName\(\)\), confirm: 'Remove', variant: 'danger', cancel: 'Keep it' \}\)/, 'removal asks once');
+  assert.match(view, /confirmDialog\(\{ title: 'Remove card', message, confirm: 'Remove', variant: 'danger', cancel: 'Keep it' \}\)/, 'removal asks once');
+  assert.match(view, /: removeWords\(card, projectName\(\)\);/, 'an app board\'s card names its project');
   assert.match(card, /rel: 'noopener noreferrer'/, 'a link opens without handing the studio window over');
 });

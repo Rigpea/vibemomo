@@ -382,7 +382,8 @@ behind a hover media query.
 
 The studio is becoming a station each person makes their own. Sections 1 to 11 say what the studio looks like; this
 section says what a person may move, and by how much, without leaving that look (ARCHITECTURE.md section 24). The
-fixed rules (section 11) come first: what a rule of the studio project locks cannot be moved here.
+fixed rules (section 11) bind the studio's source; the person's look is a layer on top for them only, so a lock never
+takes a choice away here (decision row 186, section 15). One line says when the look differs from a locked default.
 
 **What can be chosen, and the scales.** Each choice writes tokens of client/styles.css and nothing else.
 
@@ -404,7 +405,8 @@ fixed rules (section 11) come first: what a rule of the studio project locks can
   passes. The focus ring is the accent a quarter of the way toward the ink, so it is never the weaker of the two.
 - *Motion is on or off.* Section 1's bound (160 ms, only what appears or changes state) is not a choice. Reduced is
   the same as the system's reduced motion, which is honoured whatever is chosen.
-- *Not chosen here*: the canvas, the ink, the faces, the theme (the top bar's button, and Layout). Code in the
+- *Not chosen here*: the canvas, the panel, the ink and the display face come from the Studio look (section 15);
+  the theme is the top bar's button and Layout. Code in the
   terminal and the lessons' own text keep their sizes.
 
 **The section** is the first in Settings, under the overline `Appearance`, with one muted sentence saying where the
@@ -413,16 +415,17 @@ control, one muted line. The names and the options are plain words, never chips.
 
 - *Accent*: the colour input (44 px wide, as tall as a field), the hex in the mono (11 characters wide), then the
   presets as 24 px swatches 8 px apart with a hairline inside, so a colour close to the surface still shows. The
-  chosen one has a 2 px ring in the secondary ink, 2 px off the swatch. Under them `From <project>'s board` with the
-  colour cards of the open project's board as the same swatches. Then one line in the meta size with tabular
+  chosen one has a 2 px ring in the secondary ink, 2 px off the swatch. Under them `From your Studio look board` with
+  the colour cards of the person's Studio look board as the same swatches (never a project's app board). Then one line in the meta size with tabular
   numbers: `#79b3dc is 7.0:1 against the dark canvas (text in the accent needs 4.5:1). The light theme shows #2b73a6.`
 - *A refused colour* turns that line into the warning note (section 3: callouts for warnings only) with the
   sentence and one small button, `Use #…`. Nothing on the page changes until a colour passes.
 - *Density, Text size, Corners, Motion*: the segmented control, with the default named `Default` only where the
   steps are sizes. No Apply button: a press is the choice.
-- *A locked control* is at half strength and does not answer; under it, in the secondary ink: `Accent is fixed by
-  Atelier (studio)'s rule "Amber is the one accent…", which locks --accent at #d6a455.` and the quiet button `Show
-  the rule`, which opens that project's Fixed rules.
+- *A locked default* disables nothing. Under the intro, in the secondary ink at the meta size, one line when the look
+  differs: `Your look sets --accent away from Atelier (studio)'s locked default. Those locks bind the studio's source
+  code; your look is a layer on top, for you only.` When the Studio look set the surfaces or the face, a second line
+  says so with the quiet button `Open Studio look`.
 - *Reset to defaults* is a secondary button under the fields, disabled while every choice is at its default. It
   does not ask: the toast offers Undo.
 
@@ -560,3 +563,46 @@ was left out and why. No colour card: one sentence and **Open the board**. No ru
 rules**. A record that cannot be read says so instead of reading as none.
 
 **Motion.** None: this part has no transition and no animation. The project's motion is drawn, not played.
+
+## 15. Studio look (2026-11-15, t_bh07hvllso)
+
+Two kinds of inspiration, never mixed (ARCHITECTURE.md section 27). A project's board is for its app: its workers read
+it. The Studio look is the person's own board for the studio itself: it restyles the studio for them, on this
+computer, and nobody else reads it.
+
+**The scopes are said before anything else.** The Inspiration head reads `Inspiration`, then a muted label
+`<Project>'s app` before the segmented control Board · Fixed rules · References · Visualizer, then a muted label
+`For you` before its own control with one part, Studio look. Two controls with two labels, not one control of five:
+the parts of one scope sit together, and the gap between the groups (24 px) is the line between the scopes. The count
+names the board on screen (`Studio look · 7 cards`), and the field's placeholder says it adds for the studio's look.
+
+**The board** is the same board, cards and hands as section 10, with its own empty sentence that ends `Then Make a
+look.` Beside it, a 400 px column under a hairline (no card around it), at the reading measure:
+
+- `Studio look` in the display face at the title size, then one sentence in the secondary ink: `Restyles the studio
+  for you, on this computer. It is not <Project>'s app board, and no worker reads it.` For the studio project, one
+  more: its own board is for workers changing the studio's source; this one is only the person's.
+- *A proposal*, when one is open, comes next under a hairline: `A look from your board` in the display face, one
+  meta line (`For the dark theme, the one on screen, and shown over the studio now. Nothing is kept until Apply.`),
+  then one row per choice: the label in the muted ink (96 px), a 16 px swatch with a hairline inside and the value in
+  the mono (a face's name set in that face), and under it in the secondary ink where it came from: `from “Color
+  #173b3a deep teal”`, `a step up from the canvas`, `made darker from #2f7f79 to pass`, `“garamond” in “Note: …”`.
+  A choice the board does not give says so and stays as it is. Then one meta line: `Every text and surface pair
+  passes AA: 19 pairs, the lowest muted ink on the selected control at 4.5:1.` Then Apply (primary) and Discard.
+- Then the look in effect in one meta line, the lock line when the look differs from a locked default, and Undo
+  (only when there is something to undo) and Reset to defaults as secondary buttons.
+
+**One primary action in sight.** On the Studio look, Add is a secondary button and Make a look (in the head) is the
+primary; once a proposal is open it reads Make again and Apply is the primary.
+
+**Colour stays readable.** Every text colour (ink, second ink, muted ink, accent) passes 4.5:1 on every surface it
+sits on (canvas, panel, raised panel, field, selected control). A board colour that does not is moved in lightness
+only as far as it must, and the row says from what. The state colours keep their meaning and move the same way. A
+dark theme's canvas stays dark and a light theme's light; a look is made for the theme on screen, and each theme keeps
+its own.
+
+**Hands and motion.** The proposal shows over the whole studio the moment it is made, and again when the board or
+the theme changes; Discard, leaving the part or the view puts the kept look back. Apply, Undo and Reset each say so
+in a toast, and Apply's and Reset's toasts offer Undo; Undo also stays in the column after a reload. No transition of
+its own: the page simply becomes the look (controls that already ease their colour do so within the token).
+

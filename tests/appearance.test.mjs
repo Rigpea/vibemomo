@@ -1,7 +1,7 @@
 // Appearance settings (t_8ijmo5ji11; docs/ARCHITECTURE.md section 24). Risks covered: the model's defaults drift from
 // client/styles.css; an accent that cannot be read against the canvas is accepted, or the nearest shade offered does
-// not pass itself; a patch stores something that is no option; a control whose token a fixed rule locks is changed
-// through the route; a refusal writes something; the look does not survive a restart of the reader (the registry);
+// not pass itself; a patch stores something that is no option; a fixed rule's lock refuses or hides the person's own
+// look (it binds the studio's source only, decision row 186); a refusal writes something; the look does not survive a restart of the reader (the registry);
 // the look lands in a project; the page keeps a token after its choice went back to the default.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -11,7 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import fsp from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { CONTROLS, CONTROL_KEYS, CHOICE_KEYS, ALL_TOKENS, THEMES, CANVAS, INK, DEFAULT_ACCENT, ACCENT_PRESETS, AA_TEXT, AA_RING, normHex, contrast, luminance, mix, nearestPassing, ratioWords, accentCheck, accentPair, accentPatch, accentVars, cleanAppearance, checkAppearancePatch, patchSets, mergeAppearance, controlLocks, effectiveAppearance, lockSentence, cssVars, accentOf, optionOf, isCustom } from '../client/components/appearance-model.js';
+import { CONTROLS, CONTROL_KEYS, CHOICE_KEYS, ALL_TOKENS, THEMES, CANVAS, INK, DEFAULT_ACCENT, ACCENT_PRESETS, AA_TEXT, AA_RING, normHex, contrast, luminance, mix, nearestPassing, ratioWords, accentCheck, accentPair, accentPatch, accentVars, cleanAppearance, checkAppearancePatch, mergeAppearance, lockDiffs, lockLine, cssVars, accentOf, optionOf, isCustom, SURFACE_TOKENS, FONTS } from '../client/components/appearance-model.js';
 import { applyAppearance, rememberAppearance, FIRST_FRAME_KEY } from '../client/components/appearance.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -32,7 +32,7 @@ test('the model holds what client/styles.css holds: the canvas, ink and accent p
     assert.ok(block.includes(`--bg: ${CANVAS[theme]};`), `${theme} canvas`);
     assert.ok(block.includes(`--ink: ${INK[theme]};`), `${theme} ink`);
     assert.ok(block.includes(`--accent: ${DEFAULT_ACCENT[theme]};`), `${theme} accent`);
-    for (const token of CONTROLS.accent.tokens) assert.ok(block.includes(`${token}: `), `${token} is a ${theme} token`);
+    for (const token of [...CONTROLS.accent.tokens, ...SURFACE_TOKENS]) assert.ok(block.includes(`${token}: `), `${token} is a ${theme} token`);
   }
   for (const key of CHOICE_KEYS) {
     const c = CONTROLS[key];
@@ -41,7 +41,8 @@ test('the model holds what client/styles.css holds: the canvas, ink and accent p
     for (const o of Object.values(c.options)) assert.deepEqual(Object.keys(o.tokens), c.tokens, `every option of ${key} writes the same tokens`);
   }
   assert.equal(new Set(ALL_TOKENS).size, ALL_TOKENS.length);
-  assert.deepEqual(CONTROL_KEYS, ['accent', 'density', 'textSize', 'radius', 'motion']);
+  assert.deepEqual(CONTROL_KEYS, ['accent', 'surfaces', 'display', 'density', 'textSize', 'radius', 'motion']);
+  assert.ok(shared.includes(`--serif: ${FONTS.source.stack};`), 'the default display face is the stylesheet\'s --serif');
   // Density leaves the spacing scale alone (the 8 px grid is a fixed rule in words), and motion stays within 160 ms.
   assert.equal(ALL_TOKENS.filter((t) => /^--s\d$/.test(t)).length, 0);
   for (const o of Object.values(CONTROLS.motion.options)) assert.ok(parseFloat(o.tokens['--t']) <= 160);
@@ -125,9 +126,9 @@ test('a patch: only the five choices, only their options, an accent only as a he
   assert.deepEqual(checkAppearancePatch({ density: 'comfortable', radius: null, accent: { dark: '#d6a455' } }).patch, { density: null, radius: null, accent: { dark: null } }, 'a default, in words or as null, clears the choice');
   assert.deepEqual(checkAppearancePatch({ accent: null }).patch, { accent: null });
   const refused = [
-    [[], /appearance must be an object holding any of accent, density, textSize, radius, motion, or null to reset them all/],
+    [[], /appearance must be an object holding any of accent, surfaces, display, density, textSize, radius, motion, or null to reset them all/],
     ['compact', /appearance must be an object/],
-    [{ theme: 'light' }, /appearance\.theme is not a choice \(accent, density, textSize, radius, motion\)/],
+    [{ theme: 'light' }, /appearance\.theme is not a choice \(accent, surfaces, display, density, textSize, radius, motion\)/],
     [{ density: 'cosy' }, /appearance\.density must be one of comfortable, compact, or null for the default \(comfortable\); "cosy" is none of them/],
     [{ textSize: 15 }, /appearance\.textSize must be one of small, default, large, larger/],
     [{ radius: 'toString' }, /appearance\.radius must be one of sharp, soft, round/],
@@ -146,10 +147,6 @@ test('a patch: only the five choices, only their options, an accent only as a he
   assert.deepEqual([low.ok, low.code, low.key], [false, 'low_contrast', 'accent']);
   assert.match(low.message, /The nearest shade that passes is #[0-9a-f]{6}\.$/);
   assert.equal(checkAppearancePatch({ accent: { light: '#d6a455' } }).code, 'low_contrast', 'each theme against its own canvas');
-
-  assert.deepEqual(patchSets(good.patch), CONTROL_KEYS);
-  assert.deepEqual(patchSets({ density: null, accent: { dark: null }, radius: 'sharp' }), ['radius'], 'going back to a default sets nothing');
-  assert.deepEqual(patchSets({ accent: null }), []);
 
   let stored = mergeAppearance({}, good);
   assert.deepEqual(stored, good.patch);
@@ -171,28 +168,26 @@ test('what is stored is read back only as far as it is valid: a hand-edited regi
   assert.equal(optionOf({ textSize: 'huge' }, 'textSize'), 'default');
 });
 
-// ---------- fixed rules ----------
-test('a locked token takes its control away: which control, the rule named in a sentence, and the choice out of what is in effect', () => {
+// ---------- fixed rules: a lock binds the studio's source; the person's look is a layer on top ----------
+test('a locked token never takes a choice away: lockDiffs names the locked tokens the look sets to another value, lockLine says so once', () => {
   const locked = [
     { name: '--bg', value: '#232221', ruleId: 'rule_bg01', text: 'The canvas is warm charcoal' },
-    { name: '--accent', value: '#d6a455', ruleId: 'rule_ac01', text: 'Amber is the one accent: the primary action, links, focus and the selected item.' },
+    { name: '--accent', value: '#d6a455', ruleId: 'rule_ac01', text: 'Amber is the one accent' },
+    { name: '--serif', value: FONTS.source.stack, ruleId: 'rule_sf01', text: 'A serif display face' },
     { name: '--r2', value: '8px', ruleId: 'rule_r201', text: 'Cards keep an 8 px corner' },
-    { name: '--t', value: '140ms', ruleId: 'rule_t001', text: 'Motion at 140 ms' },
   ];
-  const locks = controlLocks(locked);
-  assert.deepEqual(Object.keys(locks), ['accent', 'radius', 'motion'], 'a token no control writes (--bg) locks no control');
-  assert.deepEqual(locks.accent, { token: '--accent', value: '#d6a455', ruleId: 'rule_ac01', text: locked[1].text });
-  assert.equal(controlLocks([{ name: '--focus', value: '#e6bd73', text: 'x' }]).accent.token, '--focus', 'any token the control writes');
-  assert.equal(controlLocks([{ name: '--fs-meta', value: '12.5px', text: 'x' }]).textSize.token, '--fs-meta');
-  assert.equal(controlLocks([{ name: '--row-h', value: '40px', text: 'x' }]).density.token, '--row-h');
-  assert.deepEqual(controlLocks([]), {});
-  assert.deepEqual(controlLocks(null), {});
-  const stored = { accent: { dark: '#79b3dc' }, density: 'compact', radius: 'round', motion: 'reduced', textSize: 'large' };
-  assert.deepEqual(effectiveAppearance(stored, locks), { density: 'compact', textSize: 'large' }, 'the locked choices are not in effect, though stored');
-  assert.deepEqual(effectiveAppearance(stored, {}), stored);
-  assert.equal(lockSentence('accent', locks.accent, 'Atelier (studio)'), 'Accent is fixed by Atelier (studio)\'s rule "Amber is the one accent: the primary action, links, focus and the selected item.", which locks --accent at #d6a455.');
-  assert.equal(lockSentence('radius', locks.radius), 'Corners is fixed by the rule "Cards keep an 8 px corner", which locks --r2 at 8px.');
-  assert.ok(lockSentence('motion', { token: '--t', value: '140ms', text: 'w '.repeat(200) }).length < 190, 'a long rule is cut');
+  assert.deepEqual(lockDiffs({}, locked, 'dark'), [], 'the studio\'s own look differs from nothing');
+  assert.deepEqual(lockDiffs({ display: 'source', radius: 'soft' }, locked, 'dark'), [], 'a default writes nothing, so it differs from nothing');
+  const look = { accent: { dark: '#79b3dc' }, radius: 'round', density: 'compact' };
+  const diffs = lockDiffs(look, locked, 'dark');
+  assert.deepEqual(diffs.map((d) => [d.name, d.yours]), [['--accent', '#79b3dc'], ['--r2', '14px']]);
+  assert.equal(lockLine(diffs, 'Atelier (studio)'), 'Your look sets --accent and --r2 away from Atelier (studio)\'s locked defaults. Those locks bind the studio\'s source code; your look is a layer on top, for you only.');
+  assert.equal(lockLine([diffs[0]]), 'Your look sets --accent away from the studio\'s locked default. Those locks bind the studio\'s source code; your look is a layer on top, for you only.');
+  assert.equal(lockLine([]), '');
+  assert.deepEqual(lockDiffs({ accent: { dark: '#79b3dc' } }, locked, 'light'), [], 'a theme the look does not touch differs from nothing');
+  const surf = lockDiffs({ surfaces: { dark: { canvas: '#173b3a', panel: '#1f4241', ink: '#f3e9d7' } }, display: 'garamond' }, locked, 'dark');
+  assert.deepEqual(surf.map((d) => d.name), ['--bg', '--accent', '--serif'], 'surfaces write --bg, the accent follows them, a face writes --serif');
+  assert.deepEqual(lockDiffs(look, null), []);
 });
 
 // ---------- the page ----------
@@ -280,7 +275,7 @@ after(async () => {
 
 test('the route: nothing stored at first; a patch is checked, stored per person in the registry and read back; a refusal writes nothing', async () => {
   const first = (await api('GET', '/api/state')).data.appearance;
-  assert.deepEqual(first, { stored: {}, effective: {}, locks: {}, rulesProject: null, rulesUnread: false });
+  assert.deepEqual(first, { stored: {}, effective: {}, locked: [], rulesProject: null, rulesUnread: false, undo: null });
   assert.deepEqual((await api('GET', '/api/settings/appearance')).data, first);
 
   const saved = await api('PATCH', '/api/settings', { appearance: { accent: { dark: '#79B3DC', light: '#1f5f8a' }, density: 'compact', textSize: 'large', radius: 'round', motion: 'reduced' } });
@@ -319,43 +314,27 @@ test('the route: nothing stored at first; a patch is checked, stored per person 
   assert.deepEqual((await api('GET', '/api/settings/appearance')).data.stored, {});
 });
 
-test('the fixed rules win: a control whose token the studio project locks is refused by the route with the rule named, and is out of what is in effect', async () => {
+test('the fixed rules are named, never enforced on the look: the studio project\'s locked tokens are listed, and a choice that differs is kept and in effect', async () => {
   const other = (await api('POST', '/api/projects', { name: 'A Product', kind: 'web-app', template: 'web-app-notes' })).data.project;
   await api('POST', `/api/projects/${other.id}/rules`, { text: 'This product keeps its own corners', kind: 'layout', token: { name: '--r1', value: '6px' } });
   await api('PATCH', '/api/settings', { appearance: { radius: 'round', accent: { dark: '#79b3dc' }, density: 'compact' } });
-  assert.deepEqual((await api('GET', '/api/settings/appearance')).data.locks, {}, 'a product\'s rules are about the product, not the studio\'s look');
+  assert.deepEqual((await api('GET', '/api/settings/appearance')).data.locked, [], 'a product\'s rules are about the product, not the studio\'s look');
 
   const studio = (await api('POST', '/api/projects', { name: 'Studio Itself', kind: 'studio' })).data.project;
   assert.equal(studio.kind, 'studio');
   const rule = (await api('POST', `/api/projects/${studio.id}/rules`, { text: 'Amber is the one accent', kind: 'color', token: { name: '--accent', value: '#d6a455' } })).data;
-  let facts = (await api('GET', '/api/state')).data.appearance;
+  const facts = (await api('GET', '/api/state')).data.appearance;
   assert.deepEqual(facts.rulesProject, { id: studio.id, name: 'Studio Itself' });
-  assert.deepEqual(facts.locks, { accent: { token: '--accent', value: '#d6a455', ruleId: rule.id, text: 'Amber is the one accent' } });
-  assert.deepEqual(facts.stored.accent, { dark: '#79b3dc' }, 'the choice made before the rule is still stored');
-  assert.deepEqual(facts.effective, { density: 'compact', radius: 'round' }, 'but it is not in effect');
+  assert.deepEqual(facts.locked, [{ name: '--accent', value: '#d6a455', ruleId: rule.id, text: 'Amber is the one accent' }]);
+  assert.deepEqual(facts.effective.accent, { dark: '#79b3dc' }, 'the person\'s accent stays in effect: the lock binds the source');
 
-  const refused = await api('PATCH', '/api/settings', { appearance: { textSize: 'large', accent: { dark: '#5fbcab' } } });
-  assert.deepEqual([refused.status, refused.data.error.code], [409, 'token_locked']);
-  assert.equal(refused.data.error.message, 'Accent is fixed by Studio Itself\'s rule "Amber is the one accent", which locks --accent at #d6a455. Change or remove that rule first (Inspiration, Fixed rules).');
-  assert.equal((await registry()).settings.appearance.textSize, undefined, 'nothing of the refused patch was written');
-  assert.equal((await registry()).settings.appearance.accent.dark, '#79b3dc');
-  // The other controls stay free, and a locked control can still go back to its default.
-  assert.equal((await api('PATCH', '/api/settings', { appearance: { textSize: 'large' } })).status, 200);
-  assert.equal((await api('PATCH', '/api/settings', { appearance: { accent: null } })).status, 200);
-  assert.equal((await registry()).settings.appearance.accent, undefined);
-
-  // A second lock, on one token of a scale: the whole control is taken.
-  await api('POST', `/api/projects/${studio.id}/rules`, { text: 'Cards keep an 8 px corner', kind: 'layout', token: { name: '--r2', value: '8px' } });
-  const corners = await api('PATCH', '/api/settings', { appearance: { radius: 'sharp' } });
-  assert.deepEqual([corners.status, corners.data.error.code], [409, 'token_locked']);
-  assert.match(corners.data.error.message, /^Corners is fixed by Studio Itself's rule "Cards keep an 8 px corner", which locks --r2 at 8px\./);
-  facts = (await api('GET', '/api/settings/appearance')).data;
-  assert.deepEqual([Object.keys(facts.locks), facts.effective], [['accent', 'radius'], { density: 'compact', textSize: 'large' }]);
-
-  // Taking the lock off frees the control, and the stored choice is in effect again.
-  await api('PATCH', `/api/projects/${studio.id}/rules/${rule.id}`, { token: null });
-  assert.equal((await api('PATCH', '/api/settings', { appearance: { accent: { dark: '#5fbcab' } } })).status, 200);
-  assert.deepEqual((await api('GET', '/api/settings/appearance')).data.effective.accent, { dark: '#5fbcab' });
+  const changed = await api('PATCH', '/api/settings', { appearance: { textSize: 'large', accent: { dark: '#5fbcab' } } });
+  assert.equal(changed.status, 200, 'a lock refuses nothing of the person\'s look');
+  assert.equal((await registry()).settings.appearance.accent.dark, '#5fbcab');
+  assert.equal((await registry()).settings.appearance.textSize, 'large');
+  // The source keeps its value: the rule is as it was, and so is the stylesheet.
+  const rules = (await api('GET', `/api/projects/${studio.id}/rules`)).data;
+  assert.deepEqual(rules.locked.map((t) => [t.name, t.value]), [['--accent', '#d6a455']]);
 
   // Per person, never in a project: no project folder holds the look.
   for (const p of [other, studio]) {
@@ -383,14 +362,15 @@ test('the Settings section is wired: applied at boot and with the theme, saved t
   assert.match(server, /if \(appearance !== undefined\) await saveAppearance\(appearance\);/);
   assert.match(server, /route\('GET', '\/api\/settings\/appearance', async \(\) => appearanceFacts\(\)\);/);
   // The panel: every control, a locked one disabled with its rule, an older server said in words, Reset with Undo.
-  for (const piece of ['type: \'color\'', 'ACCENT_PRESETS.map', 'boardColors(out.cards)', 'CHOICE_KEYS.map', '\'Reset to defaults\'', 'lockSentence(key, lock, project?.name', 'prefers-reduced-motion: reduce', 'action: { label: \'Undo\'']) assert.ok(panel.includes(piece), piece);
+  for (const piece of ['type: \'color\'', 'ACCENT_PRESETS.map', 'boardColors(out.cards)', 'app.api.lookBoard()', 'PANEL_KEYS.map', '\'Reset to defaults\'', 'lockLine(lockDiffs(look, f?.locked || [], theme)', 'prefers-reduced-motion: reduce', 'action: { label: \'Undo\'', 'save(restorePatch(before), null)']) assert.ok(panel.includes(piece), piece);
+  assert.doesNotMatch(panel, /api\.inspiration\(/, 'the studio\'s look takes no colour from a project\'s app board');
   // The picker's preview does not wait for an animation frame: a window that does not paint may never get one
   // (seen in the driver, where the preview once did not show).
   assert.doesNotMatch(panel, /requestAnimationFrame/);
   assert.match(panel, /node\.style\.setProperty\('--sw', color\);/, 'a swatch\'s colour is set as a custom property by name');
-  assert.match(panel, /b\.disabled = frozen\(key\);/);
+  assert.match(panel, /b\.disabled = frozen\(\);/);
   assert.match(panel, /pick\.disabled = off; hex\.disabled = off;/);
-  assert.match(panel, /const frozen = \(key\) => !facts\(\) \|\| !!facts\(\)\.rulesUnread \|\| !!lockOf\(key\);/);
+  assert.match(panel, /const frozen = \(\) => !facts\(\);/, 'only a server from before the look disables a control; a lock never does');
   assert.ok(panel.split('\n').length <= 500 && settings.split('\n').length <= 500);
   assert.doesNotMatch(panel, /stateChip|chip\(|variant: 'primary'/, 'no chip for a choice, and no second primary button on the page');
 });

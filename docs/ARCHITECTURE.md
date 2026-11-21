@@ -291,7 +291,11 @@ POST  /api/utility/cancel      {runId}
 GET   /api/utility             {configured, model, availableTasks:[{name, inputs, outputs}], quality:{...}}
 GET   /api/evidence/models     {probes:[...], sessions:[{file, models:{id:count}}]}
 GET   /api/settings ; PATCH    studio-default UI settings (registry.settings.ui); PATCH {appearance} is checked and stored by server/lib/appearance.mjs (section 24): 400 invalid_input, 400 low_contrast, 409 token_locked, 409 rules_unread; null resets
-GET   /api/settings/appearance {stored, effective, locks:{<control>:{token, value, ruleId, text}}, rulesProject:{id, name}|null, rulesUnread}: the look, and what the studio project's fixed rules lock (also in GET /api/state as appearance)
+GET   /api/settings/appearance {stored, effective, locked:[{name, value, ruleId, text}], rulesProject:{id, name}|null, rulesUnread, undo:{at, words}|null}: the look, the tokens the studio project's fixed rules lock (named, never enforced on the look), and whether the Studio look has an Undo (also in GET /api/state as appearance)
+POST  /api/studio-look/apply   {look: {surfaces?, accent?, display?, radius?}} -> appearance facts; the look before is kept for Undo (section 27)
+POST  /api/studio-look/reset   -> appearance facts; every choice back to the studio's own, the look before kept for Undo
+POST  /api/studio-look/undo    -> appearance facts; the look the last Apply or Reset kept comes back; 409 nothing_to_undo
+GET|POST /api/studio-look/board, POST /api/studio-look/board/move, PATCH|DELETE /api/studio-look/board/:cid, GET /api/studio-look/board/files/:name: the person's Studio look board in the data folder, the same answers and refusals as a project's inspiration routes (section 27)
 GET   /api/projects/:id/inspiration            {cards:[...], defaultTags, limits, where:{file, images}}: the inspiration board in board order (section 22)
 POST  /api/projects/:id/inspiration            {kind: image|link|color|note, tags?, why?, after?} + image {data (base64), name?} | link {url, title?} | color {hex, name?, from?} | note {text} -> the card; 413 too_large and 415 unsupported_image for an image, 400 unsafe_link for a link to a local or private address or another scheme, 409 board_full; body limit 24 MB
 PATCH /api/projects/:id/inspiration/:cid       {tags?, why?, text? (note), hex?, name? (color), title? (link), refetch?: true (link)} -> the card; a card keeps its kind
@@ -309,7 +313,7 @@ DELETE /api/projects/:id/references/:rid       {removed}
 GET   /api/projects/:id/visualizer             {entry, reason, sheets:[{file, from, lines, declarations}], skipped:[{href, from, reason}], colors, type:{families, sizes, base, rootPx}, spacing, radii, motion:{durations, easings}, rules (each locked token checked), locks, board (the colour cards, each with the nearest colour in the files), summary, limits}: the design the web entry's stylesheets hold; reads only (section 26)
 POST  /api/studio/show         {projectId?, view?, panel?, point?, file?, line?} -> emits studio.show; {...checked, delivered} (section 11)
 GET   /api/runs?projectId=<id>|all   {runs:[{id, kind, projectId, name, state, reason, startedAt, endedAt, latest, latestAt, waitsFor}], since, keepHours, note}; running first, then newest ended; 400 for an id that is not p_…; all when left out (section 16)
-GET   /api/events              SSE: project.changed, task.changed, memory.changed, budget.changed, status, utility.progress, studio.show, runs.changed {projectId, run}, inspiration.changed {projectId, cardId?, action?}, rules.changed {projectId, ruleId?, action?}, references.changed {projectId, refId?, action?}
+GET   /api/events              SSE: project.changed, task.changed, memory.changed, budget.changed, status, utility.progress, studio.show, runs.changed {projectId, run}, inspiration.changed {projectId, cardId?, action?}, studio-look.changed {cardId, action}, rules.changed {projectId, ruleId?, action?}, references.changed {projectId, refId?, action?}
 GET   /preview/:id/head/<path>                 working tree of the project (static)
 GET   /preview/:id/:vid/<path>                 files of a checkpoint (git show), same relative layout
 GET   /preview/:id/:ref/                       302 to the ref's entry, the query kept: head -> the current atelier.json's entry; a version -> the entry its own atelier.json names at that commit, else the current one (`entryAt` in server/lib/preview.mjs)
@@ -1790,7 +1794,10 @@ manager's tools (docs/evidence/codex-worker-2026-11-14.json).
 
 Each project collects design references on a board of its own (t_dfs23bojle; decision rows 152 to 154): images, links,
 color swatches and short notes, each with a few tags and an optional line saying why. The person fills it in the
-Inspiration view; Claude reads it in every task brief, in the briefing and through one MCP tool.
+Inspiration view; Claude reads it in every task brief, in the briefing and through one MCP tool. This is the app's
+board; the person's own board for the studio's look is the same module at another place (section 27): every function
+of server/lib/inspiration.mjs takes either a project folder or a place `{ root, file, dir }`, and keeps one write queue
+per board.
 
 **Records** (server/lib/inspiration.mjs). `<project>/.studio/inspiration.json` = `{ cards: [...] }` in board order,
 and the image files in `<project>/.studio/inspiration/<card id>.<ext>`. Like every `.studio` record they are
@@ -2044,6 +2051,8 @@ writes nothing.
 | Control | Options (default first in bold) | Tokens it writes |
 |---|---|---|
 | `accent` | a hex per theme | `--accent`, `--accent-soft`, `--accent-ink`, `--focus` |
+| `surfaces` | `{ canvas, panel, ink }` per theme (section 27) | `--bg`, `--panel`, `--panel-2`, `--panel-3`, `--field`, `--line`, `--line-strong`, `--ink`, `--ink-2`, `--muted`, `--seg-on`, `--code-bg`, `--canvas-dot`, the four state colours and their washes |
+| `display` | **source**, garamond, didone, georgia, slab, humanist, grotesk, geometric, rounded, mono | `--serif` (a key of `FONTS`, never a CSS value) |
 | `density` | **comfortable**, compact | `--ctl-h`, `--ctl-h-sm`, `--ctl-pad`, `--row-h`, `--top-h`, `--view-h`, `--cell-y` |
 | `textSize` | small, **default**, large, larger | `--fs-title`, `--fs-h`, `--fs-body`, `--fs-sm`, `--fs-meta`, `--fs-xs`, `--fs-over` |
 | `radius` | sharp, **soft**, round | `--r1`, `--r2`, `--r3` |
@@ -2076,19 +2085,20 @@ choice; otherwise any of the five keys, a choice as one of its options or `null`
 writes nothing, not even the valid half of the patch. What is read back is cleaned the same way (`cleanAppearance`),
 so a hand-edited registry cannot put an unknown value or a dim accent on the page.
 
-**The fixed rules win.** The locks are those of the studio as a registered project: the project of kind `studio` in
-the studio's own folder, else the first of that kind (`studioProjectOf`); with none there are no locks. Another
-project's rules are about that product. `controlLocks(lockedTokens(rules))` gives the controls a lock takes away: a
-control is locked when a rule locks any token it writes. `effectiveAppearance` leaves a locked control out of what
-is in effect (the choice stays stored and comes back when the rule goes), and the route answers 409 `token_locked`
-with `lockSentence` (the control, the project, the rule's words, the token and its value) for any patch that would
-move a locked control off its default; taking a choice back to its default is never refused. If the rules cannot be
-read, nothing is in effect and a change is a 409 `rules_unread`: an unreadable list is not read as no rules. The
-stylesheet's own value stays on the page for a locked token; the lock's value is not applied by the settings.
+**The fixed rules name; they do not enforce on the look** (decision row 186, replacing the enforcement of rows 159
+to 163). The locks are those of the studio as a registered project: the project of kind `studio` in the studio's own
+folder, else the first of that kind (`studioProjectOf`); with none there are no locks. Another project's rules are
+about that product. A lock holds the value the studio's source ships with and binds a worker editing
+client/styles.css (the brief's Must stay the same section); the person's look is a layer on top for them only, so it
+is never refused or taken out of effect. `lockDiffs(look, locked, theme)` lists the locked tokens the look writes at
+another value in the theme on screen, and `lockLine` says so in one plain line in Settings and in the Studio look.
+Rules that cannot be read change nothing on the page; the line says it cannot tell.
 
-`GET /api/settings/appearance`, and `appearance` in `GET /api/state`: `{ stored, effective, locks, rulesProject,
-rulesUnread }`. A saved patch emits `status { settings: true }`, and `rules.changed` makes every window read the
-state again, so a new lock or another window's choice arrives without a reload.
+`GET /api/settings/appearance`, and `appearance` in `GET /api/state`: `{ stored, effective, locked, rulesProject,
+rulesUnread, undo }` (`effective` is `stored`, kept for the readers that use it). A saved patch emits `status {
+settings: true }`, and `rules.changed` makes every window read the state again, so a new lock or another window's
+choice arrives without a reload. A patch through Settings leaves the Studio look nothing to undo (`settings.lookUndo`
+is dropped), since an Undo would take that change back too; the settings route never stores `lookUndo` itself.
 
 **On the page** (client/components/appearance.js; client/app.js `applyLook`, `previewLook`, `saveAppearance`).
 `applyAppearance(effective, theme)` sets `cssVars()` on the root element and takes off every token of `ALL_TOKENS`
@@ -2104,12 +2114,13 @@ second store: a lock added while no window was open shows for that frame only.
 styles in client/views.css under `.look`; DESIGN.md section 12). The layout preferences that were called Appearance
 are the next section, Layout. The nodes are built once and updated in place (`update`), so the pressed button keeps
 the focus through the save. Accent: a native colour input, a hex field, six presets (`ACCENT_PRESETS`, each passing
-on the dark canvas), and the colour cards of the open project's Inspiration board (`boardColors`: each hex once, at
-most 12, read again on a project switch and on `inspiration`). A colour that fails is kept as a proposal: its
+on the dark canvas), and the colour cards of the person's Studio look board (`boardColors`: each hex once, at most 12, read
+again on `studio-look`; never a project's app board). A colour that fails is kept as a proposal: its
 sentence in a warning note with **Use #…** for the nearest shade; nothing is saved and the page keeps the last
 accent. The line under the accent says its ratio and the other theme's shade, and for the studio's own accent under
-the ratio (the light theme's `#a86f17`, 3.7:1) says that too, with the same offer. A locked control is disabled
-with its `lockSentence` and **Show the rule** beside it. **Reset to defaults** sends `null` and offers Undo for six
+the ratio (the light theme's `#a86f17`, 3.7:1) says that too, with the same offer. No control is disabled by a lock; one line says when the look differs from a locked
+default, and another names the surfaces and display face as the Studio look's, with **Open Studio look**. The display
+face is not a control here (`PANEL_KEYS`). **Reset to defaults** sends `null` and offers Undo for six
 seconds. A window newer than its server (no `appearance` in the state) says so and offers the restart.
 
 **Checked by** tests/appearance.test.mjs (the model against client/styles.css; the contrast math, every preset on
@@ -2342,3 +2353,63 @@ throwaway projects: a copy of the studio's own page and five stylesheets with th
 three board colours, and a product from the notes template with four locks in the four states (docs/evidence/ui/uc/
 visualizer-01 to -06). `verify-rules.cjs` still holds 31 of 31 and `verify-references.cjs --offline` 40 of 40 with
 the fourth part.
+
+## 27. Studio look
+
+Two kinds of inspiration, kept apart (t_bh07hvllso; decision rows 186 and 187). A project's board (section 22) is for
+its app: workers read it in every brief. The Studio look is the person's own board for how the studio itself looks:
+it changes the studio for them, on this computer, and no brief, briefing or tool reads it.
+
+**The board** (server/lib/studio-look.mjs). `LOOK_BOARD = { root: DATA_DIR, file: 'studio-look.json', dir:
+'studio-look' }`: `~/.atelier/studio-look.json` beside the registry, images in `~/.atelier/studio-look/`. The routes
+`/api/studio-look/board…` call the same functions of server/lib/inspiration.mjs with that place, so the cards, the
+limits, the image checks, the link guards and the served headers are the same, with no copy. Changes emit
+`studio-look.changed { cardId, action }`; the client re-emits it as `studio-look`. Nothing under a project folder is
+read or written, the studio project's own included.
+
+**The look** (client/components/appearance-model.js, section 24). `settings.appearance` gains `surfaces: { dark?,
+light? }`, each `{ canvas, panel, ink }`, and `display`, a key of `FONTS`. `surfaceCheck` keeps a theme's canvas
+and panel on its side (7:1 against white for dark, 12:1 against black for light) and the ink at 4.5:1 on every surface
+text sits on: `TEXT_GROUNDS` = canvas, panel, raised panel (`--panel-2`), field and selected control, worked out by
+`surfaceGrounds`; a refusal names the worst surface and the nearest ink that passes (`inkPassing`). `surfaceVars`
+writes every surface token; the second and muted inks and the four state colours move only as far as they must to pass
+(`passAll`: `nearestPassing` stepped against the closest surface until none is too close). An accent is judged on the
+surfaces it sits on (`accentGrounds`): the canvas alone, or with a look's surfaces the four it is drawn on; a patch
+that brings new surfaces under an accent kept earlier must pass for it, or carry an accent. With surfaces and no accent
+the studio's own accent is shown at its nearest passing shade. `textPairs` lists every text colour on every surface
+with its ratio, lowest first.
+
+**Make a look** (client/components/studio-look-model.js, no DOM). `proposeLook(cards, theme, stored)` for the theme
+on screen. Colours are the colour cards and hexes written in notes (`boardColours`). Canvas: the quietest colour on
+the theme's side (a light canvas leaves near-white for the panel), else a shade of the quietest colour moved there.
+Panel: a colour a small step from the canvas, else a step toward white. Ink: the quiet colour furthest from the canvas
+on the other side, else a shade of the canvas's hue, then moved to pass. Accent: a card that says accent, else the
+most colourful colour left weighed by how far its hue stands from the canvas, else the studio's own; moved to pass.
+Display face: a family's name, then a word for its mood, then a plain serif or sans, in the type-tagged cards first
+(`fontFromBoard`). Corners: words such as sharp, rounded or soft corners, layout-tagged cards first. Every row names
+its card (`cardName`) and says when a colour was moved to pass and from what. The patch holds only what the board gave
+and is checked with `checkAppearancePatch`, the server's own check; `preview` is the stored look with it merged.
+
+**Apply, Undo, Reset** (server/lib/appearance.mjs). `POST /api/studio-look/apply { look }` saves the patch and keeps
+the look before in `settings.lookUndo { before, at, words }`; `POST /api/studio-look/reset` resets every choice and
+keeps the look before the same way; `POST /api/studio-look/undo` puts `before` back whole and drops it (409
+`nothing_to_undo` when there is none). Undo lives in the registry, so it survives a reload and shows in every window.
+
+**The view** (client/views/inspiration.js, client/components/studio-look-panel.js, client/inspiration.css). The head
+names the two scopes: "<Project>'s app" before Board, Fixed rules, References and Visualizer, and "For you" before
+Studio look (`#/inspiration/look`). The board part is the same code on another source (`source()`: the project's
+calls or the look board's; `boardKey` `look` or `app:<id>`), so paste, drop, eyedropper, edit, move and remove work
+the same, without an open project too. Beside it a column says what the board is for (the studio, for you; not the
+open project's app board; for the studio project, that its own board is for workers changing the source), the proposal
+when one is open, the look in effect, the lock line, Undo and Reset to defaults. Make a look is the one primary action
+until a proposal is open, then Apply. The proposal is previewed at once over the whole studio (`app.previewLook`), is
+made again when the board or the theme changes, and ends with Apply, Discard, leaving the part or the view.
+
+**Checked by** tests/studio-look.test.mjs (the proposal on a cream and teal board in both themes, every pair at AA,
+the rows naming their cards; thin boards; refused surfaces with their sentences; a spread of palettes whose inks and
+states all pass; accents on new surfaces; the Undo patch; one board module at two places; through a real server the
+board in the data folder with two projects' app boards byte for byte unchanged, Apply, Undo and Reset across a fresh
+read, refusals that write nothing, a lock that refuses nothing; the wiring as source checks) and tests/appearance.test.mjs.
+Seen in an offscreen Electron window with `scripts/ui-check/verify-studio-look.cjs` on a throwaway server on
+2026-11-15, 28 checks at 1280×720 and 1920×1080; `verify-appearance.cjs` holds 43 of 43 with the lock line.
+

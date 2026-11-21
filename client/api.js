@@ -145,6 +145,16 @@ export const api = {
   patchInspiration: (id, cardId, b) => patch(`${P(id)}/inspiration/${enc(cardId)}`, b),
   moveInspiration: (id, b) => post(`${P(id)}/inspiration/move`, b),
   removeInspiration: (id, cardId) => del(`${P(id)}/inspiration/${enc(cardId)}`),
+  // the Studio look (section 27): the person's own board in the data folder, the same calls without a project; Apply,
+  // Reset and Undo of the look it makes (settings.appearance)
+  lookBoard: () => get('/api/studio-look/board'),
+  addLookCard: (card) => post('/api/studio-look/board', card),
+  patchLookCard: (cardId, b) => patch(`/api/studio-look/board/${enc(cardId)}`, b),
+  moveLookCard: (b) => post('/api/studio-look/board/move', b),
+  removeLookCard: (cardId) => del(`/api/studio-look/board/${enc(cardId)}`),
+  applyLook: (look) => post('/api/studio-look/apply', { look }),
+  resetLook: () => post('/api/studio-look/reset'),
+  undoLook: () => post('/api/studio-look/undo'),
   // fixed rules (section 23): what must stay the same in the project's design; a rule may lock one design token
   rules: (id) => get(`${P(id)}/rules`),
   addRule: (id, rule) => post(`${P(id)}/rules`, rule),

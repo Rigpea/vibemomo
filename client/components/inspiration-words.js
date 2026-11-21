@@ -153,6 +153,8 @@ export function fileProblem(file, limits = {}) {
 export const rgbToHex = (r, g, b) => `#${[r, g, b].map((n) => Math.max(0, Math.min(255, n | 0)).toString(16).padStart(2, '0')).join('')}`;
 
 /** The address an image of the board is read from; v (the card's updatedAt) makes a refetched preview a new address. */
+/** The address of an image on the Studio look board (the person's own, in the data folder). */
+export const lookFileUrl = (file, v = '') => `/api/studio-look/board/files/${encodeURIComponent(file)}${v ? `?v=${encodeURIComponent(v)}` : ''}`;
 export const fileUrl = (projectId, file, v = '') => `/api/projects/${encodeURIComponent(projectId)}/inspiration/files/${encodeURIComponent(file)}${v ? `?v=${encodeURIComponent(v)}` : ''}`;
 
 /** The count line beside the title: "Harbor · 6 cards", and with a filter "Harbor · 2 of 6 cards · layout". */

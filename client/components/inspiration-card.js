@@ -8,15 +8,15 @@ import { cardName, imageAlt, linkMeta, fileUrl, rgbToHex, httpUrl } from './insp
 const imageOf = (card) => (card.kind === 'image' ? card : card.kind === 'link' ? card.image : null);
 
 /**
- * The card's node. ctx: { projectId, onEdit(card), onRemove(card), onMove(card, delta), onPick(card, hex),
- * onPicking(on) }. The list item takes the focus itself: Enter edits, Delete removes, Alt with an arrow moves it.
+ * The card's node. ctx: { projectId, fileUrl?(file, v), onEdit(card), onRemove(card), onMove(card, delta),
+ * onPick(card, hex), onPicking(on) }; fileUrl: where a board that is not a project's serves its images (the Studio look). The list item takes the focus itself: Enter edits, Delete removes, Alt with an arrow moves it.
  */
 export function cardNode(card, ctx) {
   const image = imageOf(card);
   const li = el(`li.inspo-card.inspo-${card.kind}`, { tabindex: '0', draggable: true, dataset: { card: card.id }, 'aria-label': cardName(card), 'aria-keyshortcuts': 'Enter Delete Alt+ArrowLeft Alt+ArrowRight' });
   let media = null;
   if (image?.file) {
-    const img = el('img.inspo-img', { alt: imageAlt(card), loading: 'lazy', decoding: 'async', draggable: false, src: fileUrl(ctx.projectId, image.file, card.updatedAt) });
+    const img = el('img.inspo-img', { alt: imageAlt(card), loading: 'lazy', decoding: 'async', draggable: false, src: ctx.fileUrl ? ctx.fileUrl(image.file, card.updatedAt) : fileUrl(ctx.projectId, image.file, card.updatedAt) });
     media = el('div.inspo-media', img);
     if (image.width && image.height) { img.width = image.width; img.height = image.height; media.style.aspectRatio = `${image.width} / ${image.height}`; }
     li.append(media);

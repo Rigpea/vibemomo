@@ -180,3 +180,41 @@ a.ref-title { align-self: flex-start; text-decoration: none; }
   .refs-bar, .refs-scroll { padding-left: var(--s4); padding-right: var(--s4); }
   .refs-cols { column-gap: var(--s6); }
 }
+
+/* ---------- two scopes in the head (docs/DESIGN.md section 15): "<Project>'s app" and "For you", each a small label
+   before its own segmented control, so which board is on screen is said before anything on it. ---------- */
+.inspo-scopes { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2) var(--s5); min-width: 0; }
+.inspo-scope-group { display: inline-flex; align-items: center; gap: var(--s2); min-width: 0; }
+.inspo-scope { font-size: var(--fs-meta); line-height: 1.4; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
+
+/* ---------- the Studio look (components/studio-look-panel.js): the board, and beside it a column that says what the
+   board is for, what look is in effect, and the proposal Make a look made. Hairlines between groups, no cards. ---------- */
+.inspo-main { flex: 1; min-height: 0; display: flex; }
+.inspo-main > .inspo-scroll { flex: 1; min-width: 0; }
+.slook { flex: none; width: 400px; min-height: 0; overflow-y: auto; padding: var(--s1) var(--s6) var(--s6) var(--s5); border-left: 1px solid var(--line); display: flex; flex-direction: column; gap: var(--s3); }
+.slook > p { margin: 0; }
+.slook-h { font-family: var(--serif); font-size: var(--fs-title); font-weight: 600; }
+.slook-scope { color: var(--ink-2); line-height: 1.5; text-wrap: pretty; }
+.slook-now { font-size: var(--fs-meta); line-height: 1.45; color: var(--muted); overflow-wrap: anywhere; }
+.slook-lock { font-size: var(--fs-meta); line-height: 1.45; color: var(--ink-2); text-wrap: pretty; }
+.slook-actions:has(> :not([hidden])) { margin-top: var(--s1); }
+.slook-proposal { display: flex; flex-direction: column; gap: var(--s3); margin-top: var(--s3); padding-top: var(--s4); border-top: 1px solid var(--line); }
+.slook-proposal:not([hidden]) + .slook-now { padding-top: var(--s4); border-top: 1px solid var(--line); }
+.slook-proposal > h3 { font-family: var(--serif); font-size: var(--fs-h); }
+.slook-proposal > h3:focus { outline: none; }
+.slook-proposal > h3:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.slook-proposal > p { margin: 0; text-wrap: pretty; }
+.slook-rows { list-style: none; margin: 0; padding: 0; }
+.slook-row { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 2px var(--s3); padding: var(--s2) 0; border-top: 1px solid var(--line); }
+.slook-row:first-child { border-top: 0; }
+.slook-label { color: var(--muted); font-size: var(--fs-meta); line-height: 1.6; }
+.slook-pick { display: flex; align-items: center; gap: var(--s2); min-width: 0; color: var(--ink); }
+.slook-value { min-width: 0; overflow-wrap: anywhere; }
+.slook-from { grid-column: 2; font-size: var(--fs-meta); line-height: 1.45; color: var(--ink-2); overflow-wrap: anywhere; text-wrap: pretty; }
+.slook-sw { flex: none; width: 16px; height: 16px; border-radius: 4px; background: var(--sw); box-shadow: inset 0 0 0 1px var(--line-strong); }
+
+@media (max-width: 1100px) {
+  .inspo-main { flex-direction: column; overflow-y: auto; }
+  .inspo-main > .inspo-scroll { flex: none; overflow: visible; }
+  .slook { order: -1; width: auto; overflow: visible; padding: var(--s1) var(--s4) var(--s4); border-left: 0; border-bottom: 1px solid var(--line); }
+}

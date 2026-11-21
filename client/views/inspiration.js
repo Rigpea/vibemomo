@@ -1,5 +1,8 @@
-// Inspiration (docs/DESIGN.md section 10, docs/ARCHITECTURE.md section 22): the board where the open project collects
-// design references. A head with the project's name and count and one field that adds what is typed (a link, a hex
+// Inspiration (docs/DESIGN.md sections 10 and 15, docs/ARCHITECTURE.md sections 22 and 27): two scopes kept apart.
+// "<Project>'s app": the board where the open project collects design references for its workers, with its fixed
+// rules, references and Visualizer. "Studio look": the person's own board for how the studio itself looks, kept in
+// the data folder; the same board UI on another source, with Make a look beside it (components/studio-look-panel.js).
+// The board: A head with the project's name and count and one field that adds what is typed (a link, a hex
 // color, a note); a row of the tags in use as a filter; then the board, a grid of cards packed by height in board
 // order. An image comes by paste, by drop or by a file pick, anywhere on the view; a card is edited in a dialog, moved
 // by drag or Alt with an arrow, removed after one question. The records are the server's (.studio/inspiration.json),
@@ -10,8 +13,11 @@ import { editCardDialog } from '../components/inspiration-edit.js';
 import { mountRules } from '../components/rules-panel.js';
 import { mountReferences } from '../components/references-panel.js';
 import { mountVisualizer } from '../components/visualizer-panel.js';
+import { mountStudioLook } from '../components/studio-look-panel.js';
 import { olderServer } from '../components/skills-panel.js';
-import { detectKind, addLabel, tagsInUse, filterCards, stepTarget, dropTarget, moved, spanFor, estimateHeight, fileProblem, countWords, cardName, removeWords, PICK_HINT, EMPTY_WORDS } from '../components/inspiration-words.js';
+import { detectKind, addLabel, tagsInUse, filterCards, stepTarget, dropTarget, moved, spanFor, estimateHeight, fileProblem, countWords, cardName, removeWords, lookFileUrl, PICK_HINT, EMPTY_WORDS } from '../components/inspiration-words.js';
+
+const LOOK_EMPTY = 'Nothing collected for the studio\'s look yet. Drop or paste an image, a link, a hex color or a few words: colors you like, a face, how corners should feel. Then Make a look.';
 
 const CARD_DRAG = 'application/x-atelier-card';
 const tagByProject = new Map(); // the filter each project was left on, for this window
@@ -30,26 +36,33 @@ export function mount(host, app) {
   const live = el('p.sr-only', { 'aria-live': 'polite' });
   const board = el('ol.inspo-board', { 'aria-label': 'Inspiration board' });
   const scroll = el('div.inspo-scroll', board);
-  // The view's four parts (DESIGN.md sections 11, 13 and 14): the board of what the person likes, the fixed rules
-  // saying what must stay the same, the references to build from, and the Visualizer, which draws what the project's
-  // stylesheets really hold beside the first two. The address says which (#/inspiration, #/inspiration/rules,
-  // #/inspiration/references, #/inspiration/visualizer), so a reload keeps it.
+  // The view's parts in two scopes. The open project's app (DESIGN.md sections 10, 11, 13 and 14): the board of what
+  // the person likes for it, the fixed rules saying what must stay the same, the references to build from, and the
+  // Visualizer. The Studio look (section 15): the person's own board for the studio itself, and Make a look. The
+  // address says which (#/inspiration, #/inspiration/rules, #/inspiration/references, #/inspiration/visualizer,
+  // #/inspiration/look), so a reload keeps it.
   const rulesN = el('span.inspo-seg-n');
   const refsN = el('span.inspo-seg-n');
   const segBtn = (v, ...words) => el('button', { type: 'button', 'aria-pressed': 'false', dataset: { v }, onclick: () => setMode(v) }, ...words);
-  const seg = el('div.seg', { role: 'group', 'aria-label': 'Part of Inspiration' }, segBtn('board', 'Board'), segBtn('rules', 'Fixed rules', rulesN), segBtn('references', 'References', refsN), segBtn('visualizer', 'Visualizer'));
+  const appScope = el('span.inspo-scope', { id: 'inspo-scope-app' });
+  const seg = el('div.seg', { role: 'group', 'aria-labelledby': 'inspo-scope-app' }, segBtn('board', 'Board'), segBtn('rules', 'Fixed rules', rulesN), segBtn('references', 'References', refsN), segBtn('visualizer', 'Visualizer'));
+  const lookSeg = el('div.seg', { role: 'group', 'aria-labelledby': 'inspo-scope-look' }, segBtn('look', 'Studio look'));
+  const scopes = el('div.inspo-scopes', el('span.inspo-scope-group', appScope, seg), el('span.inspo-scope-group', el('span.inspo-scope', { id: 'inspo-scope-look' }, 'For you'), lookSeg));
   const rulesHost = el('div.rules', { hidden: true });
   const rules = mountRules(rulesHost, app, { onChange: () => renderHead() });
   const refsHost = el('div.refs', { hidden: true });
   const refs = mountReferences(refsHost, app, { onChange: () => renderHead() });
   const vizHost = el('div.viz', { hidden: true });
   const viz = mountVisualizer(vizHost, app, { onChange: () => renderHead() });
+  const lookHost = el('aside.slook', { hidden: true, 'aria-label': 'Studio look' });
+  const look = mountStudioLook(lookHost, app, { cards: () => (ui?.mode === 'look' ? ui.cards : null), projectName: () => (ui ? projectName() : ''), projectIsStudio: () => !!ui && ui.app.state.projects.find((p) => p.id === ui.pid)?.kind === 'studio' });
   // The filter and the status words share one row that is always there, so the board never jumps when words appear.
   const bar = el('div.inspo-bar', filter, status);
-  const root = el('div.inspo', el('header.inspo-head', title, seg, count, el('span.spacer'), form, rules.addButton, refs.addButton, viz.readButton, viz.taskButton), bar, live, scroll, rulesHost, refsHost, vizHost);
+  const main = el('div.inspo-main', scroll, lookHost);
+  const root = el('div.inspo', el('header.inspo-head', title, scopes, count, el('span.spacer'), form, look.makeButton, rules.addButton, refs.addButton, viz.readButton, viz.taskButton), bar, live, main, rulesHost, refsHost, vizHost);
   clear(host, root);
 
-  ui = { app, root, count, field, addBtn, filter, status, live, board, scroll, form, bar, seg, rulesN, rulesHost, rules, refsN, refsHost, refs, vizHost, viz, mode: 'board', pid: null, cards: null, defaults: [], limits: {}, error: null, tag: null, busy: [], picking: false, dropDepth: 0, drag: null, seq: 0, timer: null, offs: [], observer: null };
+  ui = { app, root, count, field, addBtn, filter, status, live, board, scroll, main, form, bar, seg, lookSeg, appScope, rulesN, rulesHost, rules, refsN, refsHost, refs, vizHost, viz, lookHost, look, mode: 'board', pid: null, boardKey: null, cards: null, defaults: [], limits: {}, error: null, tag: null, busy: [], picking: false, dropDepth: 0, drag: null, seq: 0, timer: null, offs: [], observer: null };
   if (typeof ResizeObserver === 'function') ui.observer = new ResizeObserver((entries) => { for (const e of entries) setSpan(e.target, e.borderBoxSize?.[0]?.blockSize ?? e.target.offsetHeight); });
 
   field.addEventListener('input', syncAdd);
@@ -69,7 +82,8 @@ export function mount(host, app) {
   ui.offs.push(app.on('project-switch', sync));
   ui.offs.push(app.on('bundle', sync));
   ui.offs.push(app.on('studio', renderHead));
-  ui.offs.push(app.on('inspiration', (d) => { if (ui && (!d?.projectId || d.projectId === ui.pid)) later(); }));
+  ui.offs.push(app.on('inspiration', (d) => { if (ui && ui.mode !== 'look' && (!d?.projectId || d.projectId === ui.pid)) later(); }));
+  ui.offs.push(app.on('studio-look', () => { if (ui?.mode === 'look') later(); }));
   ui.offs.push(app.on('sse', (d) => { if (ui && d?.state === 'open' && d.prev === 'down') load(); }));
   window.addEventListener('hashchange', applyMode);
   ui.offs.push(() => window.removeEventListener('hashchange', applyMode));
@@ -84,6 +98,7 @@ export function unmount() {
   ui.rules.unmount();
   ui.refs.unmount();
   ui.viz.unmount();
+  ui.look.unmount();
   ui.observer?.disconnect();
   ui.offs.forEach((off) => off());
   ui = null;
@@ -92,24 +107,29 @@ export function unmount() {
 /** Tests and drivers only. */
 export const _ui = () => ui;
 
-// ---------- the four parts: the board, the fixed rules, the references and the Visualizer ----------
+// ---------- the parts: the app's board, fixed rules, references and Visualizer; the Studio look ----------
 const RULES_HASH = '#/inspiration/rules';
 const REFS_HASH = '#/inspiration/references';
 const VIZ_HASH = '#/inspiration/visualizer';
+const LOOK_HASH = '#/inspiration/look';
 const names = (hash) => location.hash === hash || location.hash.startsWith(`${hash}/`);
-const modeOfHash = () => (names(RULES_HASH) ? 'rules' : names(REFS_HASH) ? 'references' : names(VIZ_HASH) ? 'visualizer' : 'board');
+const modeOfHash = () => (names(RULES_HASH) ? 'rules' : names(REFS_HASH) ? 'references' : names(VIZ_HASH) ? 'visualizer' : names(LOOK_HASH) ? 'look' : 'board');
 function setMode(mode) {
-  location.hash = mode === 'rules' ? RULES_HASH : mode === 'references' ? REFS_HASH : mode === 'visualizer' ? VIZ_HASH : '#/inspiration';
+  location.hash = mode === 'rules' ? RULES_HASH : mode === 'references' ? REFS_HASH : mode === 'visualizer' ? VIZ_HASH : mode === 'look' ? LOOK_HASH : '#/inspiration';
   applyMode(); // the hashchange that follows finds it done
 }
+const boardish = (mode) => mode === 'board' || mode === 'look';
 /** Show the part the address names. Off the board its hands are still: no drop, no paste, no eyedropper. */
 function applyMode() {
   if (!ui || !/^#\/inspiration(\/|$)/.test(location.hash || '#/inspiration')) return;
   const mode = modeOfHash();
   if (mode !== ui.mode) { stopPicking(); setDropping(false); }
   ui.mode = mode;
-  for (const b of ui.seg.children) b.setAttribute('aria-pressed', String(b.dataset.v === mode));
-  for (const node of [ui.form, ui.bar, ui.scroll]) node.hidden = mode !== 'board';
+  for (const b of [...ui.seg.children, ...ui.lookSeg.children]) b.setAttribute('aria-pressed', String(b.dataset.v === mode));
+  for (const node of [ui.form, ui.bar, ui.main]) node.hidden = !boardish(mode);
+  ui.lookHost.hidden = mode !== 'look';
+  ui.addBtn.classList.toggle('primary', mode !== 'look'); // on the Studio look, Make a look is the one primary action
+  ui.look.show(mode === 'look');
   ui.rulesHost.hidden = mode !== 'rules';
   ui.rules.addButton.hidden = mode !== 'rules';
   ui.refsHost.hidden = mode !== 'references';
@@ -118,30 +138,52 @@ function applyMode() {
   ui.viz.taskButton.hidden = ui.viz.readButton.hidden = mode !== 'visualizer';
   ui.viz.show(mode === 'visualizer'); // it reads the files when it comes on screen, not before
   renderHead();
+  ensureBoard();
 }
 
-// ---------- the project and its board ----------
+// ---------- the board on screen: the open project's app board, or the person's Studio look board ----------
 const projectName = () => ui.app.state.projects.find((p) => p.id === ui.pid)?.name || '';
+const LOOK_KEY = 'look';
+const keyNow = () => (ui.mode === 'look' ? LOOK_KEY : ui.pid ? `app:${ui.pid}` : null);
+/** The calls of the board on screen. The Studio look board needs no project: it is the person's own. */
+function source(me = ui) {
+  const api = me.app.api;
+  if (me.boardKey === LOOK_KEY) return { name: 'your Studio look', load: () => api.lookBoard(), add: (b) => api.addLookCard(b), patch: (id, b) => api.patchLookCard(id, b), move: (b) => api.moveLookCard(b), remove: (id) => api.removeLookCard(id), fileUrl: lookFileUrl };
+  const pid = me.pid;
+  return { name: `${projectName() || 'this project'}'s`, load: () => api.inspiration(pid), add: (b) => api.addInspiration(pid, b), patch: (id, b) => api.patchInspiration(pid, id, b), move: (b) => api.moveInspiration(pid, b), remove: (id) => api.removeInspiration(pid, id), fileUrl: null };
+}
+const boardReady = () => !!ui && boardish(ui.mode) && !!ui.boardKey;
 
 function sync() {
   if (!ui) return;
   const pid = ui.app.projectId();
   if (pid === ui.pid) return;
-  stopPicking();
   ui.pid = pid;
-  Object.assign(ui, { cards: null, snapshot: null, error: null, tag: tagByProject.get(pid) || null, busy: [], picking: false });
+  ensureBoard();
+  renderHead();
+  ui.look.refresh(); // the scope sentence names the open project
+}
+
+/** The board the part on screen shows: read it when it changes (a project switch, or between the app and the look). */
+function ensureBoard() {
+  if (!ui || !boardish(ui.mode)) return;
+  const key = keyNow();
+  if (key === ui.boardKey) return;
+  stopPicking();
+  ui.boardKey = key;
+  Object.assign(ui, { cards: null, snapshot: null, error: null, tag: tagByProject.get(key) || null, busy: [], picking: false });
   render();
-  if (pid) load();
+  if (key) load();
 }
 
 async function load({ focusId = null } = {}) {
   const me = ui;
-  const pid = me.pid;
-  if (!pid) return;
+  const key = me.boardKey;
+  if (!key) return;
   const seq = ++me.seq;
   try {
-    const out = await me.app.api.inspiration(pid);
-    if (ui !== me || me.pid !== pid || seq !== me.seq) return;
+    const out = await source(me).load();
+    if (ui !== me || me.boardKey !== key || seq !== me.seq) return;
     const snapshot = JSON.stringify([out.cards || [], out.defaultTags || []]);
     // The board as it already stands (the echo of this window's own change): the nodes, the focus and an open
     // eyedropper stay as they are.
@@ -149,10 +191,11 @@ async function load({ focusId = null } = {}) {
     Object.assign(me, { cards: out.cards || [], defaults: out.defaultTags || [], limits: out.limits || {}, error: null, snapshot });
     if (same) return focusCard(focusId);
   } catch (err) {
-    if (ui !== me || me.pid !== pid || seq !== me.seq) return;
+    if (ui !== me || me.boardKey !== key || seq !== me.seq) return;
     Object.assign(me, { error: err, snapshot: null });
   }
   render({ focusId });
+  if (key === LOOK_KEY) me.look.refresh(); // an open proposal follows the board
 }
 
 function focusCard(id) {
@@ -171,7 +214,7 @@ function later() {
 // ---------- adding ----------
 function syncAdd() {
   const found = detectKind(ui.field.value);
-  ui.addBtn.disabled = !ui.pid;
+  ui.addBtn.disabled = !boardReady();
   ui.addBtn.querySelector('span').textContent = addLabel(found);
 }
 
@@ -179,13 +222,13 @@ function syncAdd() {
  *  is (the eyedropper goes on picking). Resolves the card, or null when refused. */
 async function add(body, words, { focus = true } = {}) {
   const me = ui;
-  const pid = me.pid;
-  if (!pid) return null;
+  const key = me.boardKey;
+  if (!boardReady()) return null;
   me.busy.push(words);
   renderStatus();
   try {
-    const card = await me.app.api.addInspiration(pid, body);
-    if (ui === me && me.pid === pid) await load({ focusId: focus ? card.id : null });
+    const card = await source(me).add(body);
+    if (ui === me && me.boardKey === key) await load({ focusId: focus ? card.id : null });
     return card;
   } catch (err) {
     toastError(err, 'Inspiration');
@@ -243,7 +286,7 @@ function addText(text) {
 }
 
 function paste(e) {
-  if (!ui || !ui.pid || ui.mode !== 'board' || document.querySelector('dialog[open]')) return;
+  if (!boardReady() || document.querySelector('dialog[open]')) return;
   const files = [...(e.clipboardData?.files || [])];
   if (files.length) { e.preventDefault(); addFiles(files); return; }
   if (e.target?.closest?.('input, textarea, select, [contenteditable="true"]')) return; // typing: the paste is the field's
@@ -252,7 +295,7 @@ function paste(e) {
 }
 
 /** A drag from outside the board (files, a link, a text), not one of its own cards. */
-const isOutside = (e) => { const types = [...(e.dataTransfer?.types || [])]; return !!ui?.pid && ui.mode === 'board' && !types.includes(CARD_DRAG) && types.some((t) => t === 'Files' || t === 'text/uri-list' || t === 'text/plain'); };
+const isOutside = (e) => { const types = [...(e.dataTransfer?.types || [])]; return boardReady() && !types.includes(CARD_DRAG) && types.some((t) => t === 'Files' || t === 'text/uri-list' || t === 'text/plain'); };
 function setDropping(on) {
   if (!on) ui.dropDepth = 0;
   ui.root.classList.toggle('dropping', on);
@@ -271,18 +314,21 @@ const say = (words) => { clear(ui.live, words); };
 
 async function edit(card) {
   const me = ui;
-  const saved = await editCardDialog(card, { defaultTags: me.defaults, cards: me.cards, limits: me.limits, save: (patch) => me.app.api.patchInspiration(me.pid, card.id, patch) });
+  const src = source(me);
+  const saved = await editCardDialog(card, { defaultTags: me.defaults, cards: me.cards, limits: me.limits, save: (patch) => src.patch(card.id, patch) });
   if (saved && ui === me) load({ focusId: card.id });
 }
 
 async function remove(card) {
   const me = ui;
-  const ok = await confirmDialog({ title: 'Remove card', message: removeWords(card, projectName()), confirm: 'Remove', variant: 'danger', cancel: 'Keep it' });
+  const src = source(me);
+  const message = me.boardKey === LOOK_KEY ? `Remove this ${card.kind} from your Studio look board?${card.kind === 'image' || card.image ? ' Its image file goes from the studio\'s data folder.' : ''}` : removeWords(card, projectName());
+  const ok = await confirmDialog({ title: 'Remove card', message, confirm: 'Remove', variant: 'danger', cancel: 'Keep it' });
   if (!ok || ui !== me) return;
   const ids = shownIds();
   const next = ids[ids.indexOf(card.id) + 1] || ids[ids.indexOf(card.id) - 1] || null;
   try {
-    await me.app.api.removeInspiration(me.pid, card.id);
+    await src.remove(card.id);
     toast(`Removed: ${cardName(card)}`, { tone: 'ok', timeout: 2500, clears: 'Inspiration' });
     if (ui === me) load({ focusId: next });
   } catch (err) { toastError(err, 'Inspiration'); if (ui === me) load(); }
@@ -296,7 +342,7 @@ async function move(id, before, words) {
   me.snapshot = JSON.stringify([me.cards, me.defaults]); // what the server will answer once it has moved it
   render({ focusId: id });
   say(words);
-  try { await me.app.api.moveInspiration(me.pid, { id, before }); } catch (err) { toastError(err, 'Inspiration'); if (ui === me) load({ focusId: id }); }
+  try { await source(me).move({ id, before }); } catch (err) { toastError(err, 'Inspiration'); if (ui === me) load({ focusId: id }); }
 }
 function step(card, delta) {
   const ids = shownIds();
@@ -360,26 +406,35 @@ function renderHead() {
   const r = ui.refs.count();
   clear(ui.refsN, r ? String(r) : '');
   ui.refsN.hidden = !r;
+  const name = projectName();
+  const studio = ui.app.state.projects.find((p) => p.id === ui.pid)?.kind === 'studio';
+  clear(ui.appScope, name ? `${name}'s app` : 'The app');
+  ui.seg.title = name ? `For ${name}: what its workers read when they build it${studio ? ' (the studio\'s own source)' : ''}` : '';
+  ui.lookSeg.title = 'For you: restyles the studio on this computer, not the open project';
   if (ui.mode === 'rules') clear(ui.count, ui.rules.words());
   else if (ui.mode === 'references') clear(ui.count, ui.refs.words());
   else if (ui.mode === 'visualizer') clear(ui.count, ui.viz.words());
-  else clear(ui.count, ui.cards ? countWords(projectName(), total, filterCards(ui.cards, ui.tag).length, ui.tag) : projectName());
-  ui.field.disabled = !ui.pid;
+  else {
+    const who = ui.mode === 'look' ? 'Studio look' : name;
+    clear(ui.count, ui.cards ? countWords(who, total, filterCards(ui.cards, ui.tag).length, ui.tag) : who);
+  }
+  ui.field.disabled = !boardReady();
+  ui.field.placeholder = ui.mode === 'look' ? 'Paste a color, a link or a few words for the studio\'s look…' : 'Paste a link, a hex color or a few words…';
   syncAdd();
 }
 
 function renderStatus() {
   if (!ui) return;
-  const words = ui.root.classList.contains('dropping') ? `Drop to add to ${projectName() || 'this project'}'s board` : ui.busy[0] || (ui.picking ? PICK_HINT : '');
+  const words = ui.root.classList.contains('dropping') ? `Drop to add to ${source().name} board` : ui.busy[0] || (ui.picking ? PICK_HINT : '');
   clear(ui.status, ui.busy.length && !ui.root.classList.contains('dropping') ? loading(words) : words);
   ui.status.hidden = !words;
 }
 
 function renderFilter() {
   const tags = tagsInUse(ui.cards || [], ui.defaults);
-  if (ui.tag && !tags.some((t) => t.tag === ui.tag)) { ui.tag = null; tagByProject.delete(ui.pid); }
+  if (ui.tag && !tags.some((t) => t.tag === ui.tag)) { ui.tag = null; tagByProject.delete(ui.boardKey); }
   ui.filter.hidden = !tags.length;
-  const choose = (tag) => { ui.tag = tag; if (tag) tagByProject.set(ui.pid, tag); else tagByProject.delete(ui.pid); render(); ui.filter.querySelector('[aria-pressed="true"]')?.focus(); };
+  const choose = (tag) => { ui.tag = tag; if (tag) tagByProject.set(ui.boardKey, tag); else tagByProject.delete(ui.boardKey); render(); ui.filter.querySelector('[aria-pressed="true"]')?.focus(); };
   const one = (tag, words, n) => el('button.inspo-filter-tag', { type: 'button', 'aria-pressed': String(ui.tag === tag), onclick: () => choose(tag) }, words, el('span.inspo-filter-n', String(n)));
   clear(ui.filter, one(null, 'All', ui.cards?.length || 0), tags.map((t) => one(t.tag, t.tag, t.count)));
 }
@@ -399,14 +454,15 @@ function render({ focusId = null } = {}) {
   const fill = (node) => { picking?.stopPick(); clear(me.board); me.board.hidden = true; me.scroll.querySelector('.inspo-fill')?.remove(); me.scroll.append(el('div.inspo-fill', node)); };
   me.scroll.querySelector('.inspo-fill')?.remove();
   me.board.hidden = false;
-  if (!me.pid) return fill(empty('Create a project first; its inspiration board appears here.'));
+  const isLook = me.boardKey === LOOK_KEY;
+  if (!me.boardKey) return fill(empty('Create a project first; its inspiration board appears here.'));
   if (me.error && olderServer(me.error)) { // a window newer than the server it talks to
-    return fill(empty('This studio server started before the Inspiration board existed, so it has no route for it yet. Restart it to load the new code (Ctrl+Alt+R).', null, button('Restart the studio', { onclick: () => me.app.restart() })));
+    return fill(empty(`This studio server started before the ${isLook ? 'Studio look' : 'Inspiration board'} existed, so it has no route for it yet. Restart it to load the new code (Ctrl+Alt+R).`, null, button('Restart the studio', { onclick: () => me.app.restart() })));
   }
   if (me.error) return fill(errorBox(me.error, () => load()));
   if (me.cards === null) return fill(loading('Reading the board…'));
-  if (!me.cards.length) return fill(empty(EMPTY_WORDS));
-  const ctx = { projectId: me.pid, onEdit: edit, onRemove: remove, onMove: step, onPick: pickColor, onPicking: (on) => { me.picking = on; renderStatus(); } };
+  if (!me.cards.length) return fill(empty(isLook ? LOOK_EMPTY : EMPTY_WORDS));
+  const ctx = { projectId: me.pid, fileUrl: source(me).fileUrl, onEdit: edit, onRemove: remove, onMove: step, onPick: pickColor, onPicking: (on) => { me.picking = on; renderStatus(); } };
   const colWidth = me.board.querySelector('.inspo-card')?.offsetWidth || 280;
   const nodes = filterCards(me.cards, me.tag).map((card) => {
     if (picking?.dataset.card === card.id) return picking;

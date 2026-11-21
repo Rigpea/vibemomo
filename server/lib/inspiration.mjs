@@ -2,7 +2,10 @@
 // in <project>/.studio/inspiration.json as { cards: [...] } in board order; their image files in
 // <project>/.studio/inspiration/<card id>.<ext>. Four kinds: image, link, color, note; each with a few tags and an
 // optional one-line why. A file name is only ever built from a card id this module made and an extension read from
-// the bytes, every path goes through insideProject(), and writes are atomic and queued per project folder.
+// the bytes, every path goes through insideProject(), and writes are atomic and queued per board.
+// A board is found by where it lives: a project folder (its .studio/inspiration.json, as above), or a place
+// { root, file, dir } such as the Studio look board in the studio's data folder (server/lib/studio-look.mjs), which
+// keeps the same cards under the same guards.
 import path from 'node:path';
 import fsp from 'node:fs/promises';
 import { HttpError, newId, nowIso, insideProject } from './paths.mjs';
@@ -30,19 +33,23 @@ export const BOARD_FILE = '.studio/inspiration.json';
 export const BOARD_DIR = '.studio/inspiration';
 export const LIMITS = { imageBytes: IMAGE_MAX_BYTES, cards: MAX_CARDS, tags: TAGS_MAX, tag: TAG_MAX, why: WHY_MAX, note: NOTE_MAX, title: TITLE_MAX, name: NAME_MAX };
 
-const boardFile = (projectPath) => insideProject(projectPath, BOARD_FILE, { allowStudio: true });
-const fileOf = (projectPath, name) => insideProject(projectPath, path.join(BOARD_DIR, name), { allowStudio: true });
+/** Where a board lives: a project folder's own board, or a place { root, file, dir } given whole. */
+const placeOf = (where) => (typeof where === 'string' ? { root: where, file: BOARD_FILE, dir: BOARD_DIR } : where);
+const boardFile = (where) => { const p = placeOf(where); return insideProject(p.root, p.file, { allowStudio: true }); };
+const fileOf = (where, name) => { const p = placeOf(where); return insideProject(p.root, path.join(p.dir, name), { allowStudio: true }); };
+const queueKey = (where) => { const p = placeOf(where); return `${path.resolve(p.root)}|${p.file}`; };
 const bad = (message) => new HttpError(400, 'invalid_input', message);
 const notFound = (id) => new HttpError(404, 'not_found', `Card ${String(id).slice(0, 60)} is not on this board`);
 const isId = (id) => typeof id === 'string' && CARD_ID.test(id);
 const mb = (n) => `${(n / 1024 / 1024).toFixed(1)} MB`;
 
-const queues = new Map(); // project folder -> the end of its queue, so two writes never read the same board
-function queued(projectPath, run) {
-  const done = (queues.get(projectPath) || Promise.resolve()).then(run);
+const queues = new Map(); // board -> the end of its queue, so two writes never read the same board
+function queued(where, run) {
+  const key = queueKey(where);
+  const done = (queues.get(key) || Promise.resolve()).then(run);
   const tail = done.catch(() => {});
-  queues.set(projectPath, tail);
-  tail.then(() => { if (queues.get(projectPath) === tail) queues.delete(projectPath); });
+  queues.set(key, tail);
+  tail.then(() => { if (queues.get(key) === tail) queues.delete(key); });
   return done;
 }
 
@@ -122,7 +129,8 @@ const save = (projectPath, cards) => writeJson(boardFile(projectPath), { cards }
 
 /** GET's answer: the cards, the default tags, the limits the client names in its own sentences. */
 export async function boardAnswer(projectPath) {
-  return { cards: await listCards(projectPath), defaultTags: [...DEFAULT_TAGS], limits: { ...LIMITS }, where: { file: BOARD_FILE, images: BOARD_DIR } };
+  const p = placeOf(projectPath);
+  return { cards: await listCards(projectPath), defaultTags: [...DEFAULT_TAGS], limits: { ...LIMITS }, where: { file: p.file, images: p.dir } };
 }
 
 const hostOf = (url) => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; } };
