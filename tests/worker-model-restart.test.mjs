@@ -86,7 +86,7 @@ test('the stored studio default survives a restart, and a change while the serve
   await startServer(); // a fresh process on the same data folder
   assert.deepEqual((await api('GET', '/api/settings/worker-model')).data.studio, { stored: 'claude-sonnet-5-5', fallback: 'claude-fable-5-2', model: 'claude-sonnet-5-5' }, 'read from the registry after the restart');
   const levels = (await api('GET', `/api/projects/${project.id}/worker-model?task=${first}`)).data;
-  assert.deepEqual(levels.effective, { model: 'claude-sonnet-5-5', source: 'studio', words: 'studio default' });
+  assert.deepEqual(levels.effective, { model: 'claude-sonnet-5-5', source: 'studio', words: 'studio default', backend: 'claude-code', label: 'claude-sonnet-5-5' });
 
   const a = await workerRecord(project.id, first);
   assert.deepEqual([a.started.model, a.started.modelSource, a.rec.model, a.rec.worker], ['claude-sonnet-5-5', 'studio', 'claude-sonnet-5-5', true], 'the worker\'s session record shows the stored default');

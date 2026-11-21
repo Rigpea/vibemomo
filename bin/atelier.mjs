@@ -16,7 +16,7 @@
 //   atelier restore <versionId> [--project <id|path>]
 //   atelier projects                  every registered project with its worker model
 //   atelier project get worker-model [--project <id|path>]
-//   atelier project set worker-model <model|default> [--project <id|path>]
+//   atelier project set worker-model <model|codex:<model>[@<effort>]|default> [--project <id|path>]
 //   atelier briefing [--project <id|path>]
 //
 // The project is resolved from --project, else from the current folder (walking up to a .studio/).
@@ -31,8 +31,8 @@ import * as versions from '../server/lib/versions.mjs';
 import * as memory from '../server/lib/memory.mjs';
 import * as tasks from '../server/lib/tasks.mjs';
 import * as briefing from '../server/lib/briefing.mjs';
-import { CONSOLE_MODELS, workerModelWords } from '../server/lib/models.mjs';
-import { studioWorkerModelOf } from '../server/lib/worker-model.mjs';
+import { CONSOLE_MODELS, CODEX_WORKER_FORM, workerModelWords } from '../server/lib/models.mjs';
+import { studioWorkerModelOf, checkCodexWorker } from '../server/lib/worker-model.mjs';
 
 function parseArgs(argv) {
   const positional = [];
@@ -117,6 +117,7 @@ async function main() {
     if (!tid) throw new Error('task id required');
     const ctx = await findTask(tid, flags.project);
     const regen = () => briefing.regenerate(ctx.project.id);
+    const actor = tasks.actorOf(); // 'codex' inside a Codex session (ATELIER_ACTOR), else 'claude-code'
     switch (cmd) {
       case 'show': {
         const { brief, task, events } = await tasks.getTask(ctx.path, tid);
@@ -134,32 +135,36 @@ async function main() {
         return out(`task ${tid}: the base is ${base ? `#${base.n} ${base.label} (${base.id})` : `commit ${String(task.context?.baseSha).slice(0, 8)}`}${moved ? ', and the brief says so now' : named && !base ? '; its base version record is gone' : ''}`);
       }
       case 'start': {
-        const t = await tasks.startTask(ctx.path, tid);
+        const t = await tasks.startTask(ctx.path, tid, actor);
         await regen();
         return out(`task ${tid} → working (started ${t.startedAt}). Brief: ${path.join(ctx.path, '.studio', 'tasks', tid, 'brief.md')}`);
       }
       case 'note': {
-        await tasks.noteTask(ctx.path, tid, rest.slice(1).join(' '));
+        await tasks.noteTask(ctx.path, tid, rest.slice(1).join(' '), actor);
         return out(`note recorded on ${tid}`);
       }
       case 'heartbeat': {
-        await tasks.heartbeat(ctx.path, tid);
+        await tasks.heartbeat(ctx.path, tid, actor);
         return out('ok');
       }
       case 'question': {
-        await tasks.questionTask(ctx.path, tid, rest.slice(1).join(' '));
+        await tasks.questionTask(ctx.path, tid, rest.slice(1).join(' '), actor);
         await regen();
         return out(`task ${tid} → needs your input`);
       }
       case 'finish': {
         const summary = flags.summary;
         if (!summary || summary === true) throw new Error('--summary "..." is required');
-        const { version, result } = await tasks.finishTask(ctx, tid, {
+        // Where this process cannot write the project's .git (a sandboxed session), the finish is recorded and the
+        // studio keeps the version when the worker's turn ends (tasks.mjs finishOrRequest).
+        const { deferred, version, result } = await tasks.finishOrRequest(ctx, tid, {
           summary,
           verification: arr(flags.verification),
           unresolved: arr(flags.unresolved),
           decisions: arr(flags.decision),
+          actor,
         });
+        if (deferred) return out(`task ${tid}: your finish is recorded. This session cannot write the project's .git (its sandbox keeps it read-only), so no version exists yet: the studio keeps it when this worker's turn ends and then marks the task Ready to try. Nothing more to run: end your turn now. (Run outside a studio worker, nothing completes it: run task finish again from a shell that can write .git.)`);
         await regen();
         if (!version) return out({ task: tid, status: 'review (nothing to try: record the result to close it)', version: null, note: result.note, result });
         return out({ task: tid, status: 'review (Ready to try)', version: { id: version.id, n: version.n, sha: version.sha, label: version.label }, versionIds: result.versionIds, result });
@@ -212,7 +217,8 @@ async function main() {
     }
     if (cmd === 'set') {
       const value = rest[1];
-      if (!value) throw new Error(`project set worker-model needs a model (${CONSOLE_MODELS.join(', ')}) or default`);
+      if (!value) throw new Error(`project set worker-model needs a model (${CONSOLE_MODELS.join(', ')}), ${CODEX_WORKER_FORM}, or default`);
+      await checkCodexWorker(value); // a Codex model or effort this machine's Codex does not offer is refused here, as the routes refuse it
       await projects.patchProject(id, { workerModel: value === 'default' ? null : value });
       await briefing.regenerate(id);
       const ctx = await projects.loadProject(id); // read back from the record, not from what was sent

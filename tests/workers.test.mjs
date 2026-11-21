@@ -6,7 +6,8 @@ import assert from 'node:assert/strict';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { createWorkers, reportText, interruptedText, REPORT_MARK } from '../server/lib/workers.mjs';
+import { createWorkers, reportText, interruptedText, lastFailure, REPORT_MARK, CODEX_WORKER_SANDBOX, CODEX_NO_EXPLORE } from '../server/lib/workers.mjs';
+import * as codexMod from '../server/lib/codex.mjs';
 import { createTools } from '../server/lib/mcp/tools.mjs';
 import { checkWorkerModel } from '../server/lib/models.mjs';
 import { studioMcpConfig, claudeArgs } from '../server/lib/console.mjs';
@@ -18,7 +19,7 @@ import { restartWords } from '../client/components/restart.js';
  * companions: projectId -> its Companion session id. gone: session ids whose record is deleted. busy: sessions
  * mid-turn (a send answers 409). running: sessions whose turn runs in this process.
  */
-function setup({ state = null, stateFile = null, companions = { p1: 'cs_companion' }, gone = [], busy = [], dirty = false, records = {}, studioModel = null } = {}) {
+function setup({ state = null, stateFile = null, companions = { p1: 'cs_companion' }, gone = [], busy = [], dirty = false, records = {}, studioModel = null, tasksExtra = {}, consoleExtra = {}, workersExtra = {} } = {}) {
   state ||= { tasks: new Map(), events: [], ingested: [], reopened: [], answered: [] };
   state.sent = [];
   state.sessions ||= 0;
@@ -42,6 +43,7 @@ function setup({ state = null, stateFile = null, companions = { p1: 'cs_companio
     ingestTask: async (_c, tid) => { state.ingested.push(tid); state.tasks.get(tid).status = 'done'; return { task: state.tasks.get(tid), version: { id: 'v_1' } }; },
     // as tasks.mjs setTaskWorkerModel: the checked value is stored on the record, null removes it
     setTaskWorkerModel: async (_p, tid, value) => { const t = state.tasks.get(tid); const m = checkWorkerModel(value); if (m) t.workerModel = m; else delete t.workerModel; return { task: t, changed: true }; },
+    ...tasksExtra,
   };
   const consoleSvc = {
     createSession: async (opts) => { const s = { id: `cs_w${++state.sessions}`, ...opts }; (state.created ||= []).push(s); return s; },
@@ -55,6 +57,7 @@ function setup({ state = null, stateFile = null, companions = { p1: 'cs_companio
       if (/^cs_w/.test(id)) live.running.add(id);
       return { runId: `cr_${state.sent.length}` };
     },
+    ...consoleExtra,
   };
   const loadProject = async (id) => {
     if (!Object.hasOwn(companions, id)) throw Object.assign(new Error(`Project ${id} not found`), { status: 404 });
@@ -63,9 +66,9 @@ function setup({ state = null, stateFile = null, companions = { p1: 'cs_companio
   };
   const queuedRuns = [];
   const runs = { start: (r) => queuedRuns.push(r.id), remove: (id) => { const i = queuedRuns.indexOf(id); if (i >= 0) queuedRuns.splice(i, 1); } };
-  const workers = createWorkers({ consoleSvc, tasks, loadProject, listProjects: async () => Object.keys(companions), dirty: async () => dirty, stateFile, runs, ...(studioModel ? { studioModel } : {}) });
+  const workers = createWorkers({ consoleSvc, tasks, loadProject, listProjects: async () => Object.keys(companions), dirty: async () => dirty, stateFile, runs, ...(studioModel ? { studioModel } : {}), ...workersExtra });
   /** A worker's turn ends: the console's hook, as console.mjs finish() calls it. */
-  const workerEnds = (sessionId, tid, turn = {}, projectId = 'p1') => { live.running.delete(sessionId); state.turns.get(sessionId)?.push('assistant'); return workers.onTurnEnd({ id: sessionId, projectId, worker: true, taskId: tid }, turn); };
+  const workerEnds = (sessionId, tid, turn = {}, projectId = 'p1', backend = 'claude-code') => { live.running.delete(sessionId); state.turns.get(sessionId)?.push('assistant'); return workers.onTurnEnd({ id: sessionId, projectId, worker: true, taskId: tid, backend }, turn); };
   return { state, live, task, workers, queuedRuns, workerEnds };
 }
 
@@ -82,7 +85,7 @@ test('a task goes to a worker on the studio default (Fable 5.2), high; a second 
   const b = await workers.start('p1', 't_b');
   assert.deepEqual([b.state, b.position, b.behind], ['queued', 1, 't_a']);
   assert.equal(queuedRuns.length, 1);
-  assert.deepEqual(workers.status('p1'), { active: { tid: 't_a', sessionId: 'cs_w1', managerSessionId: null, model: 'claude-fable-5-2' }, queue: ['t_b'], held: 0 });
+  assert.deepEqual(workers.status('p1'), { active: { tid: 't_a', sessionId: 'cs_w1', managerSessionId: null, backend: 'claude-code', model: 'claude-fable-5-2', effort: 'high' }, queue: ['t_b'], held: 0 });
   await assert.rejects(() => { state.tasks.get('t_a').status = 'done'; return workers.start('p1', 't_a'); }, /only a ready/);
 });
 
@@ -204,7 +207,7 @@ test('a worker that finishes reports into the companion session and the next que
   assert.ok(report.text.startsWith(REPORT_MARK));
   assert.match(report.text, /finished, ready to review\. Summary: Made it Version: #7 Done thing\. Verified: npm test\./);
   assert.match(report.text, /1 more task waits in the queue/);
-  assert.deepEqual(workers.status('p1').active, { tid: 't_b', sessionId: 'cs_w2', managerSessionId: null, model: 'claude-fable-5-2' }, 'the queued task started');
+  assert.deepEqual(workers.status('p1').active, { tid: 't_b', sessionId: 'cs_w2', managerSessionId: null, backend: 'claude-code', model: 'claude-fable-5-2', effort: 'high' }, 'the queued task started');
   assert.equal(queuedRuns.length, 0, 'its Queued placeholder is gone');
 });
 
@@ -306,7 +309,7 @@ test('the queue, the notes and the held reports are written to the state file as
   await workers.start('p1', 't_a', { managerSessionId: 'cs_m' });
   await workers.start('p1', 't_b', { managerSessionId: 'cs_m' });
   let saved = JSON.parse(await fsp.readFile(stateFile, 'utf8'));
-  assert.deepEqual(saved.projects.p1, { active: { tid: 't_a', sessionId: 'cs_w1', managerSessionId: 'cs_m', model: 'claude-fable-5-2' }, queue: [{ tid: 't_b', managerSessionId: 'cs_m' }] });
+  assert.deepEqual(saved.projects.p1, { active: { tid: 't_a', sessionId: 'cs_w1', managerSessionId: 'cs_m', backend: 'claude-code', model: 'claude-fable-5-2', effort: 'high' }, queue: [{ tid: 't_b', managerSessionId: 'cs_m' }] });
   const r = await workers.report('p1', `${REPORT_MARK} held`, { managerSessionId: 'cs_gone' }); // its manager is gone and p1 has no Companion
   assert.deepEqual(r, { delivered: false, reason: 'no manager session' });
   saved = JSON.parse(await fsp.readFile(stateFile, 'utf8'));
@@ -341,7 +344,7 @@ test('a fake restart: the cut-off task\'s manager is told, the kept queue resume
   assert.match(toHarbor[0].text, /t_a "Task t_a": interrupted by a studio restart before it finished\. It had been working on it since 2026-11-07T21:00:00\.000Z; its last note: "Header spacing done; footer next"\./);
   assert.match(toHarbor[0].text, /holds no uncommitted change.*atelier_review_task \(verdict revise.* The next queued task t_b starts now\./);
   assert.equal(after.state.sent.filter((s) => s.id === 'cs_companion').length, 0, 'the task project\'s Companion is not told');
-  assert.deepEqual(after.workers.status('p1'), { active: { tid: 't_b', sessionId: 'cs_w2', managerSessionId: 'cs_harbor', model: 'claude-fable-5-2' }, queue: [], held: 0 });
+  assert.deepEqual(after.workers.status('p1'), { active: { tid: 't_b', sessionId: 'cs_w2', managerSessionId: 'cs_harbor', backend: 'claude-code', model: 'claude-fable-5-2', effort: 'high' }, queue: [], held: 0 });
   // A second restart says nothing again about the same cut-off session, and tells about the new one.
   after.state.tasks.get('t_b').status = 'working';
   const again = setup({ state: after.state, stateFile, companions, dirty: false });
@@ -491,4 +494,100 @@ test('the restart confirmation says how many workers are mid-task and that their
   assert.match(restartWords({ working: ['Fix header'], workers: { active: [{ name: 'Fix header' }], queued: 0 } }), /^1 worker is mid-task and will be interrupted; its manager is told and can continue it\.$/);
   assert.equal(restartWords({ working: [], workers: { active: [], queued: 0 } }), '');
   assert.match(restartWords({ working: ['a', 'b'], workers: null }), /^2 runs are working now and will be stopped: a, b\. Tasks keep their status\.$/);
+});
+
+// ---------- Codex workers (decision row 182): a worker model of codex:<model>[@<effort>] starts a Codex session ----------
+test('codex worker: a Codex worker model starts a Codex session in workspace-write with that model and effort; the event, the state and the answer name what ran', async () => {
+  assert.equal(CODEX_WORKER_SANDBOX, codexMod.CODEX_WORKER_SANDBOX, 'one sandbox for a Codex worker, in both modules');
+  const ready = [];
+  const { state, task, workers } = setup({ records: { p1: { workerModel: 'codex:gpt-6-astra@xhigh' } }, consoleExtra: { codexReady: async () => { ready.push('asked'); } } });
+  task('t_a'); task('t_b', { workerModel: 'claude-haiku-5-5' });
+  const a = await workers.start('p1', 't_a');
+  assert.deepEqual([a.state, a.backend, a.model, a.effort, a.modelSource], ['working', 'codex', 'gpt-6-astra', 'xhigh', 'project']);
+  assert.deepEqual(ready, ['asked'], 'the CLI and its login are asked for before anything is handed over');
+  const s = state.created[0];
+  assert.deepEqual([s.backend, s.model, s.effort, s.sandbox, s.worker, s.taskId], ['codex', 'gpt-6-astra', 'xhigh', 'workspace-write', true, 't_a']);
+  for (const k of ['permissionMode', 'allowStudioCli', 'tools']) assert.equal(k in s, false, `a Codex worker session takes no ${k}`);
+  const handed = state.events.find((e) => e.type === 'handed_to_console');
+  assert.deepEqual([handed.data.backend, handed.data.model, handed.data.effort, handed.data.sandbox, handed.data.modelSource, handed.data.worker], ['codex', 'gpt-6-astra', 'xhigh', 'workspace-write', 'project', true]);
+  assert.deepEqual(workers.status('p1').active, { tid: 't_a', sessionId: 'cs_w1', managerSessionId: null, backend: 'codex', model: 'gpt-6-astra', effort: 'xhigh' });
+  assert.equal(state.sent[0].text, 'PROMPT t_a', 'the same task prompt a Claude Code worker gets');
+  // Its own model outranks the project's, so the next task is a Claude Code worker as before.
+  const b = await workers.start('p1', 't_b');
+  assert.deepEqual([b.state, b.backend, b.model, b.effort], ['queued', 'claude-code', 'claude-haiku-5-5', 'high']);
+  const again = await workers.start('p1', 't_a');
+  assert.deepEqual([again.already, again.backend, again.model, again.effort], [true, 'codex', 'gpt-6-astra', 'xhigh']);
+});
+
+test('codex worker: no effort named takes what the session recorded (Codex\'s configured one); nothing is a default but Claude Code', async () => {
+  const none = setup({ records: { p1: { workerModel: 'codex:gpt-6-astra' } }, consoleExtra: { createSession: async (opts) => ({ id: 'cs_w1', ...opts, effort: 'high' }) } });
+  none.task('t_a');
+  const a = await none.workers.start('p1', 't_a');
+  assert.deepEqual([a.backend, a.model, a.effort], ['codex', 'gpt-6-astra', 'high'], 'the effort the session record holds, not a guess');
+  assert.equal(none.state.events.find((e) => e.type === 'handed_to_console').data.effort, 'high');
+  const plain = setup();
+  plain.task('t_a');
+  assert.equal((await plain.workers.start('p1', 't_a')).backend, 'claude-code', 'with nothing set a worker is Claude Code');
+  const stored = setup({ studioModel: async () => 'codex:gpt-6-luna@low' });
+  stored.task('t_a');
+  const c = await stored.workers.start('p1', 't_a');
+  assert.deepEqual([c.backend, c.model, c.effort, c.modelSource], ['codex', 'gpt-6-luna', 'low', 'studio'], 'a stored studio default may be a Codex one');
+});
+
+test('codex worker: an explore task is refused before anything is handed over; no CLI or no login starts nothing; a model Codex lacks is a 400', async () => {
+  const handovers = [];
+  const { state, task, workers } = setup({ records: { p1: { workerModel: 'codex:gpt-6-astra@xhigh' } }, tasksExtra: { handOverTask: async () => { handovers.push(1); return { moved: false, task: { context: {} }, reason: null }; } } });
+  task('t_x', { mode: 'explore' });
+  await assert.rejects(() => workers.start('p1', 't_x'), (err) => err.status === 409 && err.code === 'codex_no_explore' && err.message === CODEX_NO_EXPLORE);
+  assert.deepEqual([handovers.length, state.created, workers.status('p1').active], [0, undefined, null], 'no handover, no session, no worker');
+  // A Claude Code model on the task itself: the explore task goes to a worker as before.
+  assert.equal((await workers.start('p1', 't_x', { workerModel: 'claude-opus-5-5' })).backend, 'claude-code');
+
+  const out = setup({ records: { p1: { workerModel: 'codex:gpt-6-astra' } }, consoleExtra: { codexReady: async () => { throw Object.assign(new Error(codexMod.CODEX_SIGNED_OUT), { status: 503, code: 'console_codex_signed_out' }); } } });
+  out.task('t_a');
+  await assert.rejects(() => out.workers.start('p1', 't_a'), (err) => err.status === 503 && /Codex is signed out on this machine/.test(err.message));
+  assert.deepEqual([out.state.created, out.state.events.length, out.workers.status('p1').active], [undefined, 0, null], 'nothing was created, recorded or left running');
+
+  const choices = { models: [{ id: 'gpt-a', efforts: ['low', 'high'] }] };
+  const { checkCodexWorker } = await import('../server/lib/worker-model.mjs');
+  const checked = setup({ workersExtra: { checkCodex: (v) => checkCodexWorker(v, { choices }) } });
+  checked.task('t_a');
+  await assert.rejects(() => checked.workers.start('p1', 't_a', { workerModel: 'codex:gpt-zzz@low' }), (err) => err.status === 400 && /model must be one of gpt-a/.test(err.message));
+  await assert.rejects(() => checked.workers.start('p1', 't_a', { workerModel: 'codex:gpt-a@xhigh' }), (err) => err.status === 400 && /effort must be one of low, high for gpt-a/.test(err.message));
+  assert.equal('workerModel' in checked.state.tasks.get('t_a'), false, 'a refused model is not stored');
+  assert.equal((await checked.workers.start('p1', 't_a', { workerModel: 'codex:gpt-a@high' })).backend, 'codex');
+});
+
+test('codex worker: at its turn\'s end the studio keeps the version of the finish it recorded, then reports; a failure is a truthful did not finish', async () => {
+  const kept = [];
+  const done = setup({ records: { p1: { workerModel: 'codex:gpt-6-astra@xhigh' } }, tasksExtra: {
+    dropFinishRequest: async (_p, tid) => { kept.push(`dropped ${tid}`); },
+    completeFinishRequest: async (_c, tid) => { kept.push(`completed ${tid}`); Object.assign(done.state.tasks.get(tid), { status: 'review', result: { summary: 'Added the note', versionId: 'v_1', verification: ['read it back'] } }); return { version: { id: 'v_1' } }; },
+  } });
+  done.task('t_a');
+  await done.workers.start('p1', 't_a');
+  assert.deepEqual(kept, ['dropped t_a'], 'a finish recorded by an earlier round is dropped before the worker starts');
+  done.state.tasks.get('t_a').status = 'working'; // the worker ran task start; its task finish only recorded the finish
+  await done.workerEnds('cs_w1', 't_a', {}, 'p1', 'codex');
+  assert.deepEqual(kept, ['dropped t_a', 'completed t_a']);
+  assert.match(done.state.sent.at(-1).text, /Worker report for task t_a "Task t_a": finished, ready to review\. Summary: Added the note Version: #7 Done thing\. Verified: read it back\./);
+
+  const failing = setup({ records: { p1: { workerModel: 'codex:gpt-6-astra@xhigh' } }, tasksExtra: { completeFinishRequest: async () => { throw new Error('git commit failed: disk full'); } } });
+  failing.task('t_a');
+  await failing.workers.start('p1', 't_a');
+  failing.state.tasks.get('t_a').status = 'working';
+  await failing.workerEnds('cs_w1', 't_a', {}, 'p1', 'codex');
+  assert.match(failing.state.sent.at(-1).text, /did not finish: it recorded its finish, but the studio could not keep the version: git commit failed: disk full\. Its work is on disk, not committed, and the recorded finish is kept\./);
+
+  // No finish recorded and a refused command: the report names the refusal instead of waiting for an approval nobody can give.
+  const refused = setup({ records: { p1: { workerModel: 'codex:gpt-6-astra@xhigh' } }, tasksExtra: { completeFinishRequest: async () => null } });
+  refused.task('t_a');
+  await refused.workers.start('p1', 't_a');
+  refused.state.tasks.get('t_a').status = 'working';
+  const turn = { text: 'The compile check cannot run in this sandbox, so I stopped.', events: [{ kind: 'tool', id: 'i1', name: 'Shell', summary: 'bash tools/compile.sh' }, { kind: 'tool-result', id: 'i1', name: 'Shell', ok: false, summary: 'mkdir: cannot create directory: Permission denied' }] };
+  await refused.workerEnds('cs_w1', 't_a', turn, 'p1', 'codex');
+  assert.match(refused.state.sent.at(-1).text, /did not finish: its turn ended without finishing \(status working\); its last words: "The compile check cannot run in this sandbox, so I stopped\."\. One of its commands failed or was refused; the last: `bash tools\/compile\.sh` → mkdir: cannot create directory: Permission denied\. Decide whether/);
+  assert.equal(lastFailure({ events: [{ kind: 'tool', id: 'a', summary: 'ls' }, { kind: 'tool-result', id: 'a', ok: true }] }), '', 'a turn whose commands all worked names none');
+  assert.match(lastFailure({ events: [{ kind: 'denied', id: 'b', name: 'Shell', summary: 'rm -rf /' }] }), /One of its commands failed or was refused; the last: `rm -rf \/` was refused\./);
+  assert.match(reportText({ task: { id: 't_a', title: 'T', status: 'working' }, turn: { timedOut: true, error: 'timed out after 5400000 ms' } }), /did not finish: its turn timed out \(timed out after 5400000 ms\) before it finished\./);
 });

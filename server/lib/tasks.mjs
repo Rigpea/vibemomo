@@ -12,7 +12,7 @@ import { versionAtHead, listVersions, checkpoint, adoptHead, changes } from './v
 import * as git from './git.mjs';
 import { resolveTaskDepartment, departmentSkills } from './departments.mjs';
 import { departmentPrompt } from '../../client/components/skill-departments.js';
-import { checkWorkerModel, ownWorkerModel } from './models.mjs';
+import { checkWorkerModel, ownWorkerModel, workerWords } from './models.mjs';
 import { briefBoard } from './inspiration.mjs';
 import { briefRules } from './rules.mjs';
 import { briefRefs, taskWords } from './references.mjs';
@@ -326,8 +326,9 @@ export async function createTask(ctx, input) {
 }
 
 /**
- * A task's own worker model (server/lib/workers.mjs reads it at every launch): a CONSOLE_MODELS id is stored, null or
- * 'default' removes it, anything else is a 400 that writes nothing. A change is recorded as a worker_model event.
+ * A task's own worker model (server/lib/workers.mjs reads it at every launch): a CONSOLE_MODELS id or a Codex value
+ * (codex:<model>[@<effort>], server/lib/models.mjs) is stored, null or 'default' removes it, anything else is a 400
+ * that writes nothing. A change is recorded as a worker_model event.
  */
 export async function setTaskWorkerModel(projectPath, tid, value, actor = 'studio') {
   const model = checkWorkerModel(value);
@@ -336,7 +337,7 @@ export async function setTaskWorkerModel(projectPath, tid, value, actor = 'studi
   if (model === before && (model || !('workerModel' in task))) return { task, changed: false };
   if (model) task.workerModel = model; else delete task.workerModel;
   await saveTask(projectPath, task);
-  await appendEvent(projectPath, tid, 'worker_model', actor, { model, before, text: model ? `workers of this task start on ${model}` : 'no model of its own now: its project\'s, else the studio default' });
+  await appendEvent(projectPath, tid, 'worker_model', actor, { model, before, text: model ? `workers of this task start on ${workerWords(model)}` :'no model of its own now: its project\'s, else the studio default' });
   return { task, changed: true };
 }
 
@@ -489,6 +490,11 @@ export async function answerTask(projectPath, tid, text) {
   return task;
 }
 
+/** Who a CLI call speaks for: a Codex session's commands carry ATELIER_ACTOR=codex (server/lib/codex.mjs), every
+ *  other caller is Claude Code, as it always was. */
+export const ACTORS = ['claude-code', 'codex'];
+export const actorOf = (env = process.env) => (env.ATELIER_ACTOR === 'codex' ? 'codex' : 'claude-code');
+
 /** Called by the CLI when Claude Code finishes: checkpoint + result record. */
 export async function finishTask(ctx, tid, { summary, verification = [], unresolved = [], decisions = [], filesChanged = [], actor = 'claude-code' }) {
   const { path: projectPath, project } = ctx;
@@ -500,7 +506,7 @@ export async function finishTask(ctx, tid, { summary, verification = [], unresol
   const record = {
     label: shortLabel(task.title || summary, 80), // the version is named after the task; the summary goes in the note
     note: `Task ${tid}: ${summary}`,
-    origin: 'claude-code',
+    origin: actor === 'codex' ? 'codex' : 'claude-code', // whose work the version holds; the tag (taskId) is what ties it to the task
     state: 'experiment',
     taskId: tid,
     role: 'finish', // what is left at the finish is not one of the options: the release notes draft reads this
@@ -536,10 +542,60 @@ export async function finishTask(ctx, tid, { summary, verification = [], unresol
   task.heartbeatAt = nowIso();
   await saveTask(projectPath, task);
   await appendEvent(projectPath, tid, 'finished', actor, version ? { versionId: version.id, versionIds: result.versionIds, sha: version.sha } : { versionId: null, versionIds: [], sha: null, text: noVersionNote });
+  await dropFinishRequest(projectPath, tid); // this finish is the one that counts: a recorded request (this one's, or an earlier round's) is spent
   return { task, version, result };
 }
 
 export const NO_CHANGE_NOTE = 'No file changed, so nothing was kept and this task has no version.';
+
+// ----- A finish the session records and the studio completes (docs/ARCHITECTURE.md section 17) -----
+// A sandboxed session can write the project's files and its .studio records but not its .git: the Codex CLI's
+// workspace-write refused `git add` with "Unable to create '…/.git/index.lock': Permission denied" (2026-11-14). Its
+// `task finish` then records what it would have said, and the studio, which runs outside the sandbox, keeps the
+// version when the worker's turn ends (server/lib/workers.mjs onTurnEnd). The task stays working until then: it has
+// no version yet, and status comes from evidence.
+export const FINISH_REQUEST = 'finish-request.json';
+const finishRequestFile = (projectPath, tid) => path.join(taskDir(projectPath, tid), FINISH_REQUEST);
+const lines = (list) => (Array.isArray(list) ? list : []).filter((v) => typeof v === 'string' && v.trim());
+
+export async function requestFinish(projectPath, tid, { summary, verification = [], unresolved = [], decisions = [] } = {}, actor = 'claude-code') {
+  const task = await readTask(projectPath, tid);
+  if (['done', 'cancelled'].includes(task.status)) throw new HttpError(409, 'task_closed', `Task is ${task.status}`);
+  if (!summary || !String(summary).trim()) throw new HttpError(400, 'invalid_input', 'A summary is required');
+  const request = { summary: String(summary).trim(), verification: lines(verification), unresolved: lines(unresolved), decisions: lines(decisions), actor: ACTORS.includes(actor) ? actor : 'claude-code', requestedAt: nowIso() };
+  await writeJson(finishRequestFile(projectPath, tid), request);
+  task.heartbeatAt = nowIso();
+  await saveTask(projectPath, task);
+  await appendEvent(projectPath, tid, 'finish_requested', request.actor, { text: `${request.summary} (recorded; the studio keeps the version when the worker's turn ends)` });
+  return request;
+}
+
+/** The recorded finish, or null: none, or a file that does not hold one. */
+export async function readFinishRequest(projectPath, tid) {
+  const r = await readJson(finishRequestFile(projectPath, tid), null).catch(() => null);
+  return r && typeof r === 'object' && typeof r.summary === 'string' && r.summary.trim() ? r : null;
+}
+
+export async function dropFinishRequest(projectPath, tid) {
+  await fsp.rm(finishRequestFile(projectPath, tid), { force: true });
+}
+
+/** The studio's half: the recorded finish becomes the task's finish (checkpoint and result) and the record goes.
+ *  null when there is none. A failure leaves the record where it is, so the report can say why and a retry finds it. */
+export async function completeFinishRequest(ctx, tid) {
+  const request = await readFinishRequest(ctx.path, tid);
+  if (!request) return null;
+  return finishTask(ctx, tid, { summary: request.summary, verification: lines(request.verification), unresolved: lines(request.unresolved), decisions: lines(request.decisions), actor: ACTORS.includes(request.actor) ? request.actor : 'claude-code' });
+}
+
+/**
+ * `task finish` as the CLI runs it: the finish itself where this process can write the repository, else the recorded
+ * request. -> { deferred: false, task, version, result } or { deferred: true, request }.
+ */
+export async function finishOrRequest(ctx, tid, input, { canWrite = git.canWrite } = {}) {
+  if (await canWrite(ctx.path)) return { deferred: false, ...(await finishTask(ctx, tid, input)) };
+  return { deferred: true, request: await requestFinish(ctx.path, tid, input, input.actor) };
+}
 
 /** A clean tree whose HEAD moved holds commits made by hand: they become the version as they are,
  *  because a checkpoint here would be an empty commit. Commits that net to no change, or a HEAD

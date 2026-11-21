@@ -7,6 +7,8 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const argv = process.argv.slice(2);
 let login = process.env.FAKE_CODEX_LOGIN || 'chatgpt';
@@ -64,8 +66,49 @@ process.stdin.on('end', async () => {
   // Plain lines, as a CLI warning would print: the test reads the env and the argv from them.
   process.stdout.write(`env OPENAI_API_KEY=${has('OPENAI_API_KEY') ? 'present' : 'absent'} CODEX_API_KEY=${has('CODEX_API_KEY') ? 'present' : 'absent'} ANTHROPIC_API_KEY=${has('ANTHROPIC_API_KEY') ? 'present' : 'absent'} CLAUDECODE=${has('CLAUDECODE') ? 'present' : 'absent'} CLAUDE_CODE_ENTRYPOINT=${has('CLAUDE_CODE_ENTRYPOINT') ? 'present' : 'absent'}\n`);
   process.stdout.write(`argv ${JSON.stringify(argv.filter((a, i) => !(argv[i - 1] === '-c' && a.startsWith('mcp_servers.')) && !(a === '-c' && String(argv[i + 1]).startsWith('mcp_servers.'))))}\n`);
+  process.stdout.write(`actor ATELIER_ACTOR=${process.env.ATELIER_ACTOR || 'unset'} CODEX_ACCESS_TOKEN=${has('CODEX_ACCESS_TOKEN') ? 'present' : 'absent'}\n`);
   for (const o of overrides.filter((x) => x.startsWith('mcp_servers.'))) process.stdout.write(`mcp ${o.slice(0, 280)}\n`); // one line each: a status line is cut at 300
   if (prompt.includes('SLEEP')) await new Promise((r) => setTimeout(r, 20000));
+  // A worker's turn (FAKE_CODEX_WORKER, with a studio task's prompt): what a real Codex worker did on 2026-11-14.
+  // finish: task start through the real studio CLI, one file written, then the finish recorded as the CLI records it
+  // where .git cannot be written (tasks.requestFinish; the test machine's .git is writable, so the CLI itself would
+  // commit). question: the CLI's task question. refused: a command the sandbox refuses, then words and no finish.
+  const worker = process.env.FAKE_CODEX_WORKER;
+  const tid = prompt.match(/Work on studio task (t_[a-z0-9]+)/)?.[1];
+  if (worker && tid) {
+    const cli = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'bin', 'atelier.mjs');
+    let item = 10;
+    const command = (words, run) => {
+      const id = `item_${item++}`;
+      const wrapped = `"C:\\\\Windows\\\\pwsh.exe" -Command '${words}'`;
+      out({ type: 'item.started', item: { id, type: 'command_execution', command: wrapped, aggregated_output: '', exit_code: null, status: 'in_progress' } });
+      const r = run();
+      out({ type: 'item.completed', item: { id, type: 'command_execution', command: wrapped, aggregated_output: r.output, exit_code: r.code, status: r.code === 0 ? 'completed' : 'failed' } });
+      return r;
+    };
+    const studio = (...args) => { const r = spawnSync(process.execPath, [cli, ...args], { cwd: process.cwd(), encoding: 'utf8' }); return { code: r.status, output: `${r.stdout}${r.stderr}` }; };
+    if (worker === 'question') {
+      command(`node atelier.mjs task question ${tid} "Which colour?"`, () => studio('task', 'question', tid, 'Which colour should the note be?'));
+      out({ type: 'item.completed', item: { id: 'item_90', type: 'agent_message', text: 'I asked and stopped.' } });
+    } else if (worker === 'refused') {
+      command(`node atelier.mjs task start ${tid}`, () => studio('task', 'start', tid));
+      command('bash tools/compile.sh', () => ({ code: 1, output: 'mkdir: cannot create directory ‘/c/Users/someone’: Permission denied\nBLOCKED: Unity has no licence on this machine.\n' }));
+      out({ type: 'item.completed', item: { id: 'item_90', type: 'agent_message', text: 'The compile check cannot run in this sandbox, so I stopped.' } });
+    } else {
+      command(`node atelier.mjs task start ${tid}`, () => studio('task', 'start', tid));
+      fs.mkdirSync(path.join(process.cwd(), 'notes'), { recursive: true });
+      fs.writeFileSync(path.join(process.cwd(), 'notes', 'hello.txt'), 'hello from the worker\n');
+      const changes = [{ path: path.join(process.cwd(), 'notes', 'hello.txt'), kind: 'add' }];
+      out({ type: 'item.started', item: { id: 'item_50', type: 'file_change', changes, status: 'in_progress' } });
+      out({ type: 'item.completed', item: { id: 'item_50', type: 'file_change', changes, status: 'completed' } });
+      const tasks = await import('../../server/lib/tasks.mjs');
+      await tasks.requestFinish(process.cwd(), tid, { summary: 'Added notes/hello.txt', verification: ['read the file back'], unresolved: [], decisions: [] }, tasks.actorOf());
+      command(`node atelier.mjs task finish ${tid} --summary "Added notes/hello.txt"`, () => ({ code: 0, output: `task ${tid}: your finish is recorded.\n` }));
+      out({ type: 'item.completed', item: { id: 'item_90', type: 'agent_message', text: 'Done: the finish is recorded.' } });
+    }
+    out({ type: 'turn.completed', usage: { input_tokens: 500, cached_input_tokens: 400, cache_write_input_tokens: 0, output_tokens: 20, reasoning_output_tokens: 5 } });
+    return;
+  }
   out({ type: 'item.completed', item: { id: 'item_0', type: 'agent_message', text: 'I’ll look at the working tree.\n' } });
   const command = '"C:\\\\Windows\\\\pwsh.exe" -Command \'git status --short\'';
   out({ type: 'item.started', item: { id: 'item_1', type: 'command_execution', command, aggregated_output: '', exit_code: null, status: 'in_progress' } });

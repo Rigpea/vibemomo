@@ -1,7 +1,12 @@
 // The manager's workers (docs/ARCHITECTURE.md section 17): the Companion session is the manager, and each studio task
-// it hands over runs in its own Claude Code session, a worker, outside the manager's turns. A companion turn is one
-// `claude -p` process that ends with its answer, so anything it started in the background would end with it; the
-// studio runs the workers instead, and they keep going while the person and the manager talk.
+// it hands over runs in its own session, a worker, outside the manager's turns: a Claude Code session, or a session of
+// the person's Codex CLI when the worker model in effect is a Codex one (codex:<model>[@<effort>], models.mjs). A
+// companion turn is one `claude -p` process that ends with its answer, so anything it started in the background would
+// end with it; the studio runs the workers instead, and they keep going while the person and the manager talk.
+//
+// A Codex worker runs in Codex's workspace-write sandbox, which keeps the project's .git read-only: it cannot commit,
+// so its `task finish` records the finish and onTurnEnd here, outside the sandbox, keeps the version
+// (tasks.completeFinishRequest). An explore task is refused a Codex worker: its options are checkpoints and restores.
 //
 // One worker writes in a project folder at a time (AGENTS.md: one writing assistant per checkout); the others wait in
 // that project's queue, shown as Queued runs. Each worker remembers the manager that started it (managerSessionId, the
@@ -13,10 +18,12 @@
 
 import { HttpError, nowIso } from './paths.mjs';
 import { readJson, writeJson } from './fsutil.mjs';
-import { CONSOLE_MODELS, WORKER_MODEL, checkWorkerModel, resolveWorkerModel } from './models.mjs';
+import { WORKER_MODEL, checkWorkerModel, parseWorkerModel, resolveWorkerModel, workerWords } from './models.mjs';
 
 export { WORKER_MODEL }; // the built-in studio default; the stored default, a project's and a task's workerModel outrank it (models.mjs)
-export const WORKER_EFFORT = 'high';
+export const WORKER_EFFORT = 'high'; // a Claude Code worker's; a Codex worker's effort is part of its worker model
+export const CODEX_WORKER_SANDBOX = 'workspace-write'; // as server/lib/codex.mjs; a test holds them equal
+export const CODEX_NO_EXPLORE = 'An explore task cannot go to a Codex worker: its options are kept and restored as versions, and Codex\'s sandbox cannot write the project\'s .git. Set a Claude Code model for this task (atelier_set_worker_model, scope task), or change what the task asks for.';
 export const WORKER_PERMISSION = 'auto';
 export const STARTABLE = ['ready', 'working', 'interrupted', 'needs-input'];
 export const REPORT_MARK = '[Studio report: not from the person]';
@@ -25,6 +32,18 @@ export const SESSION_ID_RE = /^cs_[a-z0-9]+$/;
 const cut = (s, n = 400) => { const t = String(s ?? '').trim().replace(/\s+/g, ' '); return t.length > n ? `${t.slice(0, n - 1)}…` : t; };
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const nextWords = (queued) => (queued ? ` ${queued} more task${queued === 1 ? '' : 's'} wait${queued === 1 ? 's' : ''} in the queue; the next one starts now.` : '');
+
+/** The last command of a turn that failed or was refused, as its events recorded it: "<command> → <what it said>", or ''.
+ *  A sandboxed worker cannot ask for an approval: what it was refused shows here, never as a wait. */
+export function lastFailure(turn = {}) {
+  const events = Array.isArray(turn.events) ? turn.events : [];
+  const bad = [...events].reverse().find((e) => e && (e.kind === 'denied' || (e.kind === 'tool-result' && e.ok === false)));
+  if (!bad) return '';
+  const call = events.find((e) => e && e.kind === 'tool' && e.id && e.id === bad.id);
+  const what = cut(call?.summary || (bad.kind === 'denied' ? bad.summary : bad.name) || 'a command', 140);
+  const failed = events.filter((e) => e && (e.kind === 'denied' || (e.kind === 'tool-result' && e.ok === false))).length;
+  return ` ${failed === 1 ? 'One of its commands' : `${failed} of its commands`} failed or ${failed === 1 ? 'was' : 'were'} refused; the last: \`${what}\`${bad.kind === 'denied' ? ' was refused' : bad.summary ? ` → ${cut(bad.summary, 200)}` : ''}.`;
+}
 
 /** Why a worker's turn ended without a finish or a question, with the error when there was one. */
 export function endWords(turn = {}, status = 'working') {
@@ -38,8 +57,9 @@ export function endWords(turn = {}, status = 'working') {
 /**
  * The words of a worker's report to the manager, from the task as the worker left it and the turn's end.
  * task: { id, title, status, result }; events: the task's events; turn: the console turn ({ error, cancelled, timedOut, text }).
+ * finishError: why the studio could not keep the version of a finish the worker recorded (a sandboxed worker), if so.
  */
-export function reportText({ task, events = [], turn = {}, versionName = null, queued = 0 }) {
+export function reportText({ task, events = [], turn = {}, versionName = null, queued = 0, finishError = null }) {
   const head = `${REPORT_MARK} Worker report for task ${task.id} "${cut(task.title, 90)}":`;
   const next = nextWords(queued);
   const review = ` Review it: read it with atelier_task_report ${task.id} and the changes with atelier_read_diff, check them against the task's acceptance, then accept or send it back with atelier_review_task, update what needs updating, and tell the person in a few lines.`;
@@ -57,7 +77,8 @@ export function reportText({ task, events = [], turn = {}, versionName = null, q
     const q = [...events].reverse().find((e) => e.type === 'question');
     return `${head} stopped with a question: "${cut(q?.data?.text || q?.text || 'no question text', 300)}". Answer it yourself when the project's records settle it; otherwise ask the person. Then send the answer back with atelier_review_task (verdict revise, the answer as the note).${next}`;
   }
-  return `${head} did not finish: ${endWords(turn, task.status)}. Decide whether to send it back with atelier_review_task (verdict revise, with what to do differently) or to tell the person.${next}`;
+  if (finishError) return `${head} did not finish: it recorded its finish, but the studio could not keep the version: ${cut(finishError, 300)}. Its work is on disk, not committed, and the recorded finish is kept. Tell the person, or send it back with atelier_review_task (verdict revise) once the cause is gone.${next}`;
+  return `${head} did not finish: ${endWords(turn, task.status)}.${lastFailure(turn)} Decide whether to send it back with atelier_review_task (verdict revise, with what to do differently) or to tell the person.${next}`;
 }
 
 /**
@@ -88,10 +109,11 @@ export function interruptedText({ task, events = [], dirty = true, nextTid = nul
  * the held reports and the notes are kept across restarts (null: memory only). The worker model is read at every
  * launch: the task's own workerModel, else the project's, else the studio default. studioModel: async, the stored
  * studio default (server/lib/worker-model.mjs); model: the fallback when studioModel is absent, fails or answers a
- * model the studio does not offer.
+ * model the studio does not offer. checkCodex: async, refuses (400) a Codex worker model this machine's Codex does
+ * not offer (worker-model.mjs checkCodexWorker); the default checks nothing, for tests without a ~/.codex.
  */
-export function createWorkers({ consoleSvc, tasks, loadProject, listProjects = async () => [], dirty = async () => true, stateFile = null, afterChange = async () => {}, emit = () => {}, runs = null, model: defaultModel = WORKER_MODEL, studioModel = null, effort = WORKER_EFFORT, permissionMode = WORKER_PERMISSION }) {
-  const projects = new Map(); // projectId -> { active: { tid, sessionId, managerSessionId, model } | null, queue: [{ tid, managerSessionId }] }
+export function createWorkers({ consoleSvc, tasks, loadProject, listProjects = async () => [], dirty = async () => true, stateFile = null, afterChange = async () => {}, emit = () => {}, runs = null, model: defaultModel = WORKER_MODEL, studioModel = null, effort = WORKER_EFFORT, permissionMode = WORKER_PERMISSION, checkCodex = async (v) => v }) {
+  const projects = new Map(); // projectId -> { active: { tid, sessionId, managerSessionId, backend, model, effort } | null, queue: [{ tid, managerSessionId }] }
   let held = []; // [{ projectId, managerSessionId, text, at }]: reports waiting for their recipient's turn to end
   const notes = new Map(); // `${projectId}/${tid}` -> the manager's note for the next round, given to the next worker
   const of = (projectId) => {
@@ -103,11 +125,20 @@ export function createWorkers({ consoleSvc, tasks, loadProject, listProjects = a
   const heldFor = (projectId) => held.filter((h) => h.projectId === projectId).length;
   /** The studio default as it is stored now (read per launch, so a change needs no restart), else the fallback. */
   async function studioDefault() {
-    try { const m = await studioModel?.(); if (CONSOLE_MODELS.includes(m)) return m; } catch (err) { console.error('[atelier] workers: studio default model not read', err.message); }
+    try { const m = await studioModel?.(); if (parseWorkerModel(m)) return m; } catch (err) { console.error('[atelier] workers: studio default model not read', err.message); }
     return defaultModel;
   }
   /** The model the next worker of this task starts on, and where it comes from (task, project or studio). */
   const modelFor = async (task, project) => resolveWorkerModel({ task, project, studioDefault: await studioDefault() });
+  /** A stored worker model as what would run: { backend, model, effort }. A Claude Code worker's effort is the studio's. */
+  const choiceOf = (value) => {
+    const w = parseWorkerModel(value) || { backend: 'claude-code', model: value };
+    return w.backend === 'codex' ? w : { ...w, effort };
+  };
+  /** What no worker of this kind can do, said before anything is handed over or queued. */
+  const refuseUnfit = (task, choice) => {
+    if (choice.backend === 'codex' && task.mode === 'explore') throw new HttpError(409, 'codex_no_explore', CODEX_NO_EXPLORE);
+  };
 
   // ---------- persistence: one file, written atomically, one write at a time ----------
   let writing = Promise.resolve();
@@ -156,18 +187,28 @@ export function createWorkers({ consoleSvc, tasks, loadProject, listProjects = a
   async function launch(projectId, tid, managerSessionId = null) {
     const ctx = await loadProject(projectId);
     const { task } = await tasks.getTask(ctx.path, tid);
-    const handed = await tasks.handOverTask(ctx, tid);
-    if (handed.moved) await afterChange(projectId, { taskId: tid });
     // The worker model as the records say now (the task's own, else the project's, else the studio default), so a
     // change reaches the next worker (a queued task, a revise); a running worker keeps the model its session was created with.
-    const { model, source: modelSource } = await modelFor(task, ctx.project);
-    const session = await consoleSvc.createSession({
-      backend: 'claude-code', projectId, model, effort, permissionMode, allowStudioCli: true, worker: true,
-      title: `Task · ${tasks.shortLabel(task.title, 70)}`, taskId: tid, department: task.department?.name || null,
-    });
-    await tasks.appendEvent(ctx.path, tid, 'handed_to_console', 'companion', { sessionId: session.id, worker: true, model, modelSource, effort, managerSessionId });
+    const { model: value, source: modelSource } = await modelFor(task, ctx.project);
+    const choice = choiceOf(value);
+    const codex = choice.backend === 'codex';
+    refuseUnfit(task, choice);
+    if (codex) await consoleSvc.codexReady?.(); // no CLI, or signed out: the 503 with what to do, before anything is handed over
+    const handed = await tasks.handOverTask(ctx, tid);
+    if (handed.moved) await afterChange(projectId, { taskId: tid });
+    await tasks.dropFinishRequest?.(ctx.path, tid); // a finish an earlier round recorded and nobody kept is not this round's
+    const common = { projectId, worker: true, title: `Task · ${tasks.shortLabel(task.title, 70)}`, taskId: tid, department: task.department?.name || null };
+    // A Codex worker: the model and effort of its worker model (no effort named: what Codex is configured with, as the
+    // session records it), in workspace-write, with no studio tools. A Claude Code worker: as it always was.
+    const session = await consoleSvc.createSession(codex
+      ? { ...common, backend: 'codex', model: choice.model, effort: choice.effort, sandbox: CODEX_WORKER_SANDBOX }
+      : { ...common, backend: 'claude-code', model: choice.model, effort, permissionMode, allowStudioCli: true });
+    // What ran, from the session's own record where it says so: the event, the worker state and the answers name it.
+    const ran = { backend: choice.backend, model: session.model || choice.model, effort: codex ? session.effort ?? choice.effort ?? null : effort };
+    const { model } = ran;
+    await tasks.appendEvent(ctx.path, tid, 'handed_to_console', 'companion', { sessionId: session.id, worker: true, backend: ran.backend, model, modelSource, effort: ran.effort, ...(codex ? { sandbox: session.sandbox || CODEX_WORKER_SANDBOX } : {}), managerSessionId });
     const p = of(projectId);
-    p.active = { tid, sessionId: session.id, managerSessionId, model };
+    p.active = { tid, sessionId: session.id, managerSessionId, backend: ran.backend, model, effort: ran.effort };
     runs?.remove(queuedRunId(projectId, tid));
     emit('task.changed', { projectId, taskId: tid, sessionId: session.id });
     const key = `${projectId}/${tid}`;
@@ -176,11 +217,12 @@ export function createWorkers({ consoleSvc, tasks, loadProject, listProjects = a
     await persist();
     const prompt = tasks.consolePrompt(tid, task.mode, handed.task.context?.baseVersionId, handed.reason === 'kept' ? handed.task.context?.baseSha : null);
     // A task with a department: its first message names the department and lists its skills (server/lib/departments.mjs).
-    const department = task.department && tasks.departmentParagraph ? await tasks.departmentParagraph(ctx.path, task) : '';
+    // Skills are Claude Code's: a Codex worker cannot invoke them, so it is not told to (its brief still names the department).
+    const department = !codex && task.department && tasks.departmentParagraph ? await tasks.departmentParagraph(ctx.path, task) : '';
     const text = [prompt, department, note ? `The manager reviewed an earlier round of this task and sent it back with this note: ${note}` : ''].filter(Boolean).join('\n\n');
     try {
       const { runId } = await consoleSvc.send(session.id, { text });
-      return { sessionId: session.id, runId, model, modelSource };
+      return { sessionId: session.id, runId, backend: ran.backend, model, effort: ran.effort, modelSource };
     } catch (err) {
       if (p.active?.sessionId === session.id) p.active = null; // no turn runs, so no turn end would ever free the folder
       await persist();
@@ -190,19 +232,20 @@ export function createWorkers({ consoleSvc, tasks, loadProject, listProjects = a
 
   /**
    * Hand a task to a worker now, or queue it behind the project's running worker. managerSessionId: who asked.
-   * workerModel: when given, the task's own model is set first (a CONSOLE_MODELS id; 'default' or null clears it; an
-   * unknown one is a 400 and nothing starts), and it stays on the task for its later rounds until changed.
+   * workerModel: when given, the task's own model is set first (a CONSOLE_MODELS id or a Codex value; 'default' or null
+   * clears it; an unknown one is a 400 and nothing starts), and it stays on the task for its later rounds until changed.
    */
   async function start(projectId, tid, { managerSessionId = null, workerModel = undefined } = {}) {
     managerSessionId = cleanManager(managerSessionId);
-    if (workerModel !== undefined) checkWorkerModel(workerModel);
+    if (workerModel !== undefined) await checkCodex(checkWorkerModel(workerModel));
     const ctx = await loadProject(projectId);
     let { task } = await tasks.getTask(ctx.path, tid);
     if (!STARTABLE.includes(task.status)) throw new HttpError(409, 'task_closed', `Task ${tid} is ${task.status}; only a ready, working, interrupted or needs-input task can go to a worker`);
     if (workerModel !== undefined) ({ task } = await tasks.setTaskWorkerModel(ctx.path, tid, workerModel, 'companion'));
     const p = of(projectId);
     // Already running: its worker keeps the model it started on; next names what a later round would start on.
-    if (p.active?.tid === tid) return { state: 'working', already: true, sessionId: p.active.sessionId, model: p.active.model || null, next: await modelFor(task, ctx.project), queued: p.queue.length };
+    if (p.active?.tid === tid) return { state: 'working', already: true, sessionId: p.active.sessionId, backend: p.active.backend || 'claude-code', model: p.active.model || null, effort: p.active.effort ?? null, next: await modelFor(task, ctx.project), queued: p.queue.length };
+    refuseUnfit(task, choiceOf((await modelFor(task, ctx.project)).model)); // said now, not when its turn in the queue comes
     if (p.active) {
       const waiting = p.queue.find((q) => q.tid === tid);
       if (!waiting) {
@@ -215,8 +258,9 @@ export function createWorkers({ consoleSvc, tasks, loadProject, listProjects = a
         waiting.managerSessionId = managerSessionId; // the latest manager to ask hears the report
         await persist();
       }
-      const { model, source: modelSource } = await modelFor(task, ctx.project); // as the records say now; read again when it starts
-      return { state: 'queued', position: p.queue.findIndex((q) => q.tid === tid) + 1, behind: p.active.tid, model, modelSource };
+      const { model: value, source: modelSource } = await modelFor(task, ctx.project); // as the records say now; read again when it starts
+      const next = choiceOf(value); // effort null for a Codex model that names none: Codex's configured one, known once the session exists
+      return { state: 'queued', position: p.queue.findIndex((q) => q.tid === tid) + 1, behind: p.active.tid, backend: next.backend, model: next.model, effort: next.effort ?? null, modelSource };
     }
     const waiting = p.queue.findIndex((q) => q.tid === tid);
     if (waiting >= 0) { // started directly while it waited (a queue held after a restart): it leaves the queue
@@ -299,6 +343,17 @@ export function createWorkers({ consoleSvc, tasks, loadProject, listProjects = a
     if (rec.worker && rec.taskId) {
       let text;
       let managerSessionId = p.active?.sessionId === rec.id ? p.active.managerSessionId : null;
+      // A finish the worker recorded because its sandbox could not write .git (a Codex worker): the studio keeps the
+      // version now, while the folder is still this worker's (no other worker can start and have its first edits
+      // committed with it), so the task is Ready to try before the report is written. A failure is the report's.
+      let finishError = null;
+      let own = null;
+      try { own = await loadProject(rec.projectId); } catch { /* gone: the read below says so */ }
+      if (own) {
+        try {
+          if (await tasks.completeFinishRequest?.(own, rec.taskId)) emit('task.changed', { projectId: rec.projectId, taskId: rec.taskId, status: 'review' });
+        } catch (err) { finishError = err.message || String(err); }
+      }
       if (p.active?.sessionId === rec.id) { p.active = null; await persist(); }
       try {
         const ctx = await loadProject(rec.projectId);
@@ -306,7 +361,7 @@ export function createWorkers({ consoleSvc, tasks, loadProject, listProjects = a
         managerSessionId = managerSessionId || managerOf(rec.projectId, rec.id, events);
         const vid = task.result?.versionId;
         await afterChange(rec.projectId, { taskId: rec.taskId });
-        text = reportText({ task, events, turn, versionName: vid ? versionNames?.[vid] || vid : null, queued: p.queue.length });
+        text = reportText({ task, events, turn, versionName: vid ? versionNames?.[vid] || vid : null, queued: p.queue.length, finishError });
       } catch (err) {
         // The task could not be read: the report still goes, with the turn's own error and the read's.
         text = `${REPORT_MARK} Worker report for task ${rec.taskId}: its turn ended (${endWords(turn)}), and the task record could not be read: ${cut(err.message, 200)}.${nextWords(p.queue.length)}`;
@@ -375,11 +430,16 @@ export function createWorkers({ consoleSvc, tasks, loadProject, listProjects = a
         try { rec = await consoleSvc.getSession?.(sid); } catch { rec = null; }
         if (!rec || rec.turns?.at(-1)?.role !== 'user') continue;
         const managerSessionId = cleanManager(handed.data.managerSessionId);
-        if (stored === 'review' || stored === 'needs-input') {
+        // Cut off after it recorded its finish (a sandboxed worker) and before its turn's end kept the version: kept now.
+        let after = stored;
+        if (stored === 'working') {
+          try { if (await tasks.completeFinishRequest?.(ctx, t.id)) { after = 'review'; await afterChange(projectId, { taskId: t.id }); } } catch (err) { console.error('[atelier] workers reconcile: recorded finish not kept', t.id, err.message); }
+        }
+        if (after === 'review' || after === 'needs-input') {
           const full = await tasks.getTask(ctx.path, t.id).catch(() => null);
           const vid = full?.task?.result?.versionId;
-          await tasks.appendEvent(ctx.path, t.id, 'worker_interrupted', 'studio', { sessionId: sid, managerSessionId, reason: 'studio restart', after: stored });
-          held.push({ projectId, managerSessionId, text: `${reportText({ task: full?.task || t, events, versionName: vid ? full.versionNames?.[vid] || vid : null })} (Sent after a studio restart that cut its session off once it had ${stored === 'review' ? 'finished' : 'asked'}.)`, at: nowIso() });
+          await tasks.appendEvent(ctx.path, t.id, 'worker_interrupted', 'studio', { sessionId: sid, managerSessionId, reason: 'studio restart', after });
+          held.push({ projectId, managerSessionId, text: `${reportText({ task: full?.task || t, events, versionName: vid ? full.versionNames?.[vid] || vid : null })} (Sent after a studio restart that cut its session off once it had ${after === 'review' ? 'finished' : 'asked'}.)`, at: nowIso() });
           out.interrupted.push(t.id);
           continue;
         }

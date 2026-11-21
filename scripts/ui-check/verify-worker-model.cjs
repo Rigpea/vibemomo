@@ -18,7 +18,17 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atelier-verify-worker-model-'
 const projectsDir = path.join(tmp, 'projects');
 fs.mkdirSync(projectsDir, { recursive: true });
 fs.mkdirSync(OUT, { recursive: true });
-const env = { ...process.env, ATELIER_PORT: String(PORT), ATELIER_DATA_DIR: path.join(tmp, 'data'), ATELIER_PROJECTS_DIR: projectsDir, ATELIER_PID_FILE: path.join(tmp, 'server.pid'), STUDIO_ANTHROPIC_API_KEY: '' };
+// Codex for the worker model's Codex choices: the fake CLI (never a real run) and a CODEX_HOME of its own holding the
+// model list and the configured default the status route reads, so the choices are the same on every machine.
+const codexHome = path.join(tmp, 'codex-home');
+fs.mkdirSync(codexHome, { recursive: true });
+fs.writeFileSync(path.join(codexHome, 'config.toml'), 'model = "gpt-6-astra"\nmodel_reasoning_effort = "xhigh"\n');
+fs.writeFileSync(path.join(codexHome, 'models_cache.json'), JSON.stringify({ models: [
+  { slug: 'gpt-6-astra', display_name: 'GPT-6-Astra', visibility: 'list', priority: 1, supported_reasoning_levels: [{ effort: 'low' }, { effort: 'high' }, { effort: 'xhigh' }] },
+  { slug: 'gpt-6-luna', display_name: 'GPT-6-Luna', visibility: 'list', priority: 2, supported_reasoning_levels: [{ effort: 'low' }, { effort: 'medium' }] },
+] }));
+const env = { ...process.env, ATELIER_PORT: String(PORT), ATELIER_DATA_DIR: path.join(tmp, 'data'), ATELIER_PROJECTS_DIR: projectsDir, ATELIER_PID_FILE: path.join(tmp, 'server.pid'), STUDIO_ANTHROPIC_API_KEY: '',
+  ATELIER_CODEX_BIN: path.join(ROOT, 'tests', 'fixtures', 'fake-codex.mjs'), CODEX_HOME: codexHome, FAKE_CODEX_LOGIN: 'chatgpt' };
 delete env.ELECTRON_RUN_AS_NODE;
 
 const results = [];
@@ -79,10 +89,14 @@ async function main() {
   check('The line reads the studio default', /Worker model\s*Fable 5\.2 \(studio default\)/.test(text), text);
   await shot('1-default');
 
+  // The Codex models arrive with the status route's answer (GET /api/console/codex), a moment after the form opens.
+  const optionsOf = (edit) => js(`[...${identity}.querySelectorAll('select[data-edit="${edit}"] option')].map((o) => o.value + '=' + o.textContent)`);
+  const withCodex = async (edit) => { for (let i = 0; i < 40; i++) { if ((await optionsOf(edit)).some((o) => o.startsWith('codex:'))) break; await sleep(150); } return optionsOf(edit); };
   await press('Edit');
   await sleep(300);
-  const options = await js(`[...${identity}.querySelectorAll('select[data-edit="worker-model"] option')].map((o) => o.value + '=' + o.textContent)`);
-  check('Edit offers Studio default first, then the models', options?.[0] === 'default=Studio default (Fable 5.2)' && options.includes('claude-opus-5-5=Opus 5.5') && options.length === 6, options);
+  const options = await withCodex('worker-model');
+  check('Edit offers Studio default first, then the Claude Code models, then the Codex ones the status route lists', options?.[0] === 'default=Studio default (Fable 5.2)' && options.includes('claude-opus-5-5=Opus 5.5') && options.length === 8 && options[6] === 'codex:gpt-6-astra=Codex · GPT-6-Astra' && options[7] === 'codex:gpt-6-luna=Codex · GPT-6-Luna', options);
+  check('With a Claude Code model chosen no effort select shows', (await js(`${identity}.querySelector('select[data-edit="worker-model-effort"]').hidden`)) === true);
   check('The hint says when it applies', /Applies to the next worker started; a running worker keeps its model\./.test(await identityText()), await identityText());
   await choose('claude-opus-5-5');
   await shot('2-edit');
@@ -115,8 +129,8 @@ async function main() {
   const firstChoice = () => js(`${identity}.querySelector('select[data-edit="worker-model"] option').textContent`);
   await press('Edit');
   await sleep(300);
-  const studioOptions = await js(`[...${identity}.querySelectorAll('select[data-edit="studio-worker-model"] option')].map((o) => o.value + '=' + o.textContent)`);
-  check('Edit offers the studio default: Built in first, then the models', studioOptions?.[0] === 'default=Built in (Fable 5.2)' && studioOptions.includes('claude-sonnet-5-5=Sonnet 5.5') && studioOptions.length === 6, studioOptions);
+  const studioOptions = await withCodex('studio-worker-model');
+  check('Edit offers the studio default: Built in first, then the models', studioOptions?.[0] === 'default=Built in (Fable 5.2)' && studioOptions.includes('claude-sonnet-5-5=Sonnet 5.5') && studioOptions.length === 8, studioOptions);
   check('Nothing stored: the select opens on Built in', (await js(`${identity}.querySelector('select[data-edit="studio-worker-model"]').value`)) === 'default');
   await chooseStudio('claude-sonnet-5-5');
   check('The worker model\'s first choice names the default being chosen', (await firstChoice()) === 'Studio default (Sonnet 5.5)', await firstChoice());
@@ -149,6 +163,54 @@ async function main() {
   text = await identityText();
   check('The line names the project\'s model', /Worker model\s*Opus 5\.5/.test(text) && !text.includes('studio default'), text);
   await shot('7-project-opus');
+
+  // A Codex worker (decision row 182): a Codex model shows its effort select and one note; the stored value is
+  // codex:<model>@<effort>; a Claude Code model hides the effort again.
+  const effortOf = (edit) => js(`(() => { const s = ${identity}.querySelector('select[data-edit="${edit}-effort"]'); return { hidden: s.hidden, value: s.value, options: [...s.options].map((o) => o.value + '=' + o.textContent) }; })()`);
+  const chooseEffort = (edit, value) => js(`(() => { const s = ${identity}.querySelector('select[data-edit="${edit}-effort"]'); s.value = ${JSON.stringify(value)}; s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await press('Edit');
+  await sleep(300);
+  await withCodex('worker-model');
+  await choose('codex:gpt-6-astra');
+  await sleep(200);
+  let effort = await effortOf('worker-model');
+  check('A Codex model shows its effort select: the configured effort first, then the ones the model takes', effort.hidden === false && effort.value === '' && JSON.stringify(effort.options) === JSON.stringify(['=Effort Codex is configured with (xhigh)', 'low=low effort', 'high=high effort', 'xhigh=xhigh effort']), JSON.stringify(effort));
+  text = await identityText();
+  check('One note says what a Codex worker is', (text.match(/A Codex worker runs your Codex CLI on its saved login, in Codex's workspace-write sandbox: it cannot commit \(the studio keeps its version\), reach the internet or take an explore task\./g) || []).length === 1, text);
+  await chooseEffort('worker-model', 'xhigh');
+  await showSelects();
+  await shot('8-codex-edit');
+  await press('Save');
+  await sleep(1500);
+  check('Save stores the Codex model and effort as one value', (await stored()) === 'codex:gpt-6-astra@xhigh', await stored());
+  text = await identityText();
+  check('The line names Codex, the model and the effort', /Worker model\s*Codex · gpt-6-astra · xhigh effort/.test(text) && !text.includes('studio default'), text);
+  await js(`${identity}.scrollIntoView()`);
+  await shot('9-codex-line');
+  check('The briefing names it', /- Worker model: Codex gpt-6-astra at xhigh effort \(set for this project\)/.test((await api('GET', `/api/briefing?projectId=${pid}`)).markdown));
+
+  await press('Edit');
+  await sleep(300);
+  await withCodex('worker-model');
+  effort = await effortOf('worker-model');
+  check('The form opens on the stored Codex model and its effort', (await js(`${identity}.querySelector('select[data-edit="worker-model"]').value`)) === 'codex:gpt-6-astra' && effort.hidden === false && effort.value === 'xhigh', JSON.stringify(effort));
+  await chooseStudio('codex:gpt-6-luna');
+  await sleep(200);
+  const studioEffort = await effortOf('studio-worker-model');
+  check('The studio default takes a Codex model too, with that model\'s efforts', studioEffort.hidden === false && JSON.stringify(studioEffort.options) === JSON.stringify(['=Effort Codex is configured with', 'low=low effort', 'medium=medium effort']), JSON.stringify(studioEffort));
+  check('The worker model\'s first choice names the Codex default being chosen', (await firstChoice()) === 'Studio default (Codex · gpt-6-luna · Codex\'s configured effort)', await firstChoice());
+  await choose('claude-haiku-5-5');
+  await sleep(200);
+  check('Back on a Claude Code model the effort select and the note are gone', (await effortOf('worker-model')).hidden === true && !/A Codex worker runs your Codex CLI[\s\S]*A Codex worker runs your Codex CLI/.test(await identityText()), JSON.stringify(await effortOf('worker-model')));
+  await showSelects();
+  await shot('10-codex-studio-edit');
+  await press('Save');
+  await sleep(2000);
+  check('Save stores the Codex studio default with no effort named, and the project\'s Claude Code model', (await studioStored()).stored === 'codex:gpt-6-luna' && (await stored()) === 'claude-haiku-5-5', `${JSON.stringify(await studioStored())} ${await stored()}`);
+  const refusedCodex = await fetch(`${BASE}/api/projects/${pid}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workerModel: 'codex:gpt-6-luna@xhigh' }) });
+  const refusedCodexBody = await refusedCodex.json();
+  check('The route refuses an effort the Codex model does not take', refusedCodex.status === 400 && /effort must be one of low, medium for gpt-6-luna/.test(refusedCodexBody.error?.message), `${refusedCodex.status} ${refusedCodexBody.error?.message}`);
+  check('The refusal changed nothing', (await stored()) === 'claude-haiku-5-5', await stored());
 }
 
 app.whenReady().then(main).then(() => finish(results.every((r) => r.ok) ? 0 : 1)).catch((err) => { results.push({ name: 'driver error', ok: false, seen: String(err.stack || err) }); finish(2); });

@@ -15,7 +15,8 @@ import * as memory from './lib/memory.mjs';
 import * as tasks from './lib/tasks.mjs';
 import { createWatchListener } from './lib/watch-events.mjs';
 import { createWorkers } from './lib/workers.mjs';
-import { loadStudioWorkerModel, saveStudioWorkerModel, workerModelLevels } from './lib/worker-model.mjs';
+import { loadStudioWorkerModel, saveStudioWorkerModel, workerModelLevels, checkCodexWorker, codexWorkerChoices } from './lib/worker-model.mjs';
+import { CODEX_WORKER_FORM } from './lib/models.mjs';
 import { tallyUsage } from './lib/usage.mjs';
 import * as briefing from './lib/briefing.mjs';
 import { servePreview, mimeFor } from './lib/preview.mjs';
@@ -155,6 +156,7 @@ const workers = createWorkers({
   stateFile: path.join(DATA_DIR, 'workers.json'),
   afterChange: (id, what) => afterProjectChange(id, what),
   studioModel: async () => (await loadStudioWorkerModel()).model, // the stored studio default, read at every launch
+  checkCodex: (value) => checkCodexWorker(value), // a Codex worker model must be one this machine's Codex offers
 });
 
 async function afterProjectChange(projectId, what = {}) {
@@ -237,6 +239,7 @@ route('POST', '/api/projects/import', async ({ body }) => {
 });
 route('GET', '/api/projects/:id', async ({ params }) => projectBundle(params.id));
 route('PATCH', '/api/projects/:id', async ({ params, body }) => {
+  if (body && typeof body === 'object' && 'workerModel' in body) await checkCodexWorker(body.workerModel); // patchProject checks its form
   const project = await projects.patchProject(params.id, body);
   await afterProjectChange(params.id, { records: true });
   return project;
@@ -346,6 +349,7 @@ route('GET', '/api/tasks', async () => {
 });
 route('POST', '/api/projects/:id/tasks', async ({ params, body }) => {
   const ctx = await projects.loadProject(params.id);
+  if (body && typeof body === 'object' && 'workerModel' in body) await checkCodexWorker(body.workerModel); // createTask checks its form
   const task = await tasks.createTask(ctx, body);
   await afterProjectChange(params.id, { taskId: task.id });
   emit('task.changed', { projectId: params.id, taskId: task.id, status: task.status });
@@ -450,11 +454,12 @@ route('GET', '/api/workers/usage', async ({ query }) => {
 
 // ----- worker models (section 17): a task's own, else its project's, else the studio default kept in the registry -----
 const needsWorkerModel = (body) => {
-  if (!body || typeof body !== 'object' || !('workerModel' in body)) throw new HttpError(400, 'invalid_input', `workerModel is required: one of ${CONSOLE_MODELS.join(', ')}, or default`);
+  if (!body || typeof body !== 'object' || !('workerModel' in body)) throw new HttpError(400, 'invalid_input', `workerModel is required: one of ${CONSOLE_MODELS.join(', ')}, ${CODEX_WORKER_FORM}, or default`);
   return body.workerModel;
 };
 /** Store or clear the studio default. Every briefing names the worker model, so each is written again after a change. */
 async function setStudioWorkerModel(value) {
+  await checkCodexWorker(value); // a Codex model or effort Codex does not offer here: the 400 that names what it offers
   const before = await loadStudioWorkerModel();
   const studio = await saveStudioWorkerModel(value); // a 400 naming the choices for an unknown model; nothing written
   if (studio.stored !== before.stored) {
@@ -469,13 +474,15 @@ async function workerModelFacts(projectId, taskId = null) {
   if (taskId != null && !/^t_[a-z0-9]+$/.test(String(taskId))) throw new HttpError(400, 'invalid_input', 'task must be a task id');
   const ctx = await projects.loadProject(projectId);
   const task = taskId ? (await tasks.getTask(ctx.path, taskId)).task : null;
-  return workerModelLevels({ studio: await loadStudioWorkerModel(), project: { id: ctx.project.id, name: ctx.project.name, record: ctx.project }, task });
+  // codex: what a Codex worker model may name on this machine (the list the Codex tab reads), so a caller can choose from it.
+  return { ...workerModelLevels({ studio: await loadStudioWorkerModel(), project: { id: ctx.project.id, name: ctx.project.name, record: ctx.project }, task }), codex: await codexWorkerChoices() };
 }
-route('GET', '/api/settings/worker-model', async () => ({ models: [...CONSOLE_MODELS], studio: await loadStudioWorkerModel() }));
-route('PUT', '/api/settings/worker-model', async ({ body }) => ({ models: [...CONSOLE_MODELS], studio: await setStudioWorkerModel(needsWorkerModel(body)) }));
+route('GET', '/api/settings/worker-model', async () => ({ models: [...CONSOLE_MODELS], studio: await loadStudioWorkerModel(), codex: await codexWorkerChoices() }));
+route('PUT', '/api/settings/worker-model', async ({ body }) => ({ models: [...CONSOLE_MODELS], studio: await setStudioWorkerModel(needsWorkerModel(body)), codex: await codexWorkerChoices() }));
 route('GET', '/api/projects/:id/worker-model', async ({ params, query }) => workerModelFacts(params.id, query.get('task')));
 route('PUT', '/api/projects/:id/tasks/:tid/worker-model', async ({ params, body }) => {
   const ctx = await projects.loadProject(params.id);
+  await checkCodexWorker(needsWorkerModel(body));
   const { changed } = await tasks.setTaskWorkerModel(ctx.path, params.tid, needsWorkerModel(body), body.actor === 'companion' ? 'companion' : 'user');
   if (changed) emit('task.changed', { projectId: params.id, taskId: params.tid, workerModel: true });
   return { changed, ...(await workerModelFacts(params.id, params.tid)) };

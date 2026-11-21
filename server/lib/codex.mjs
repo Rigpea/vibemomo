@@ -37,6 +37,18 @@ export const codexSandboxSentence = (sandbox) => (sandbox === 'workspace-write'
   ? 'Your sandbox is workspace-write: you may edit files in this folder when the person asks for it.'
   : 'Your sandbox is read-only: you can read and run commands that change nothing; say what you would change instead of trying to.');
 
+// A Codex worker (server/lib/workers.mjs; docs/ARCHITECTURE.md section 17): a studio task carried out by a Codex
+// session. It has to write files, so its sandbox is workspace-write and nothing wider; like every Codex run it gets
+// no bypass flag and no approval policy, so a command the sandbox refuses simply fails and Codex is told.
+export const CODEX_WORKER_SANDBOX = 'workspace-write';
+/** What a worker's first message opens with, in place of the tab's role. The facts are the ones a real run showed
+ *  on 2026-11-14 (codex-cli 0.160.0, Windows): files in the folder and the temp folder are writable, .git and
+ *  everything else outside are not, and commands had no internet. */
+export const CODEX_WORKER_ROLE = 'You are a worker of the Atelier studio, running in the Codex CLI: one studio task in this project folder is yours to carry out, alone and to the end. Nobody can answer you or approve anything during this turn, so a refusal is final: when a command you need is refused, or a check cannot run here, do not look for a way around it. Run the task question command saying exactly what was refused and what you need, and stop.';
+export const CODEX_WORKER_SANDBOX_SENTENCE = 'Your sandbox is workspace-write: you can edit files in this folder; you cannot write outside it (the temp folder aside) and commands may have no internet. You cannot write this folder\'s .git either, so you cannot commit, and the studio CLI\'s checkpoint and restore do not work here. The CLI knows this: its task finish records your finish, and the studio keeps the version when your turn ends. When task finish says your finish is recorded, that is the expected end: stop there.';
+/** Every Codex child's env names it, so the studio CLI it runs records its events as Codex's (bin/atelier.mjs). */
+export const CODEX_ACTOR_ENV = { ATELIER_ACTOR: 'codex' };
+
 const MODEL_RE = /^[A-Za-z0-9][\w.:-]{0,79}$/;
 const EFFORT_RE = /^[a-z]{2,12}$/;
 const THREAD_RE = /^[A-Za-z0-9][\w-]{0,127}$/; // never starts with "-": it is an argv entry
@@ -317,7 +329,7 @@ export function parseLoginStatus(stdout, stderr = '') {
  */
 export function createCodexRunner({ env, settings, searchPath, launcher, versionOf, baseEnv, mcpFor, attachChild, armTimeout, pushEvent, send, registry = null, toolWords = (n, s) => [n, s].filter(Boolean).join(' ') }) {
   const home = () => codexHome(env);
-  const childEnv = () => dropCodexKeys(baseEnv(env));
+  const childEnv = () => ({ ...dropCodexKeys(baseEnv(env)), ...CODEX_ACTOR_ENV });
   let statusCache = null; // { at, bin, value }: `codex login status` takes a moment, so a minute's answer is reused
 
   const isFile = async (p) => { try { return (await fsp.stat(p)).isFile(); } catch { return false; } };
@@ -361,8 +373,10 @@ export function createCodexRunner({ env, settings, searchPath, launcher, version
     return st;
   }
 
-  /** One turn. text: what goes in on stdin (the person's words, with the first message's preface). */
-  async function run(rec, text, run, { contextUsed = null } = {}) {
+  /** One turn. text: what goes in on stdin (the person's words, with the first message's preface). timeoutMs: the
+   *  studio's limit for this turn when it is not the console's own (a worker's whole task), after which the run is
+   *  stopped and the turn says it timed out. Codex is given no time limit of its own. */
+  async function run(rec, text, run, { contextUsed = null, timeoutMs = null } = {}) {
     const bin = await resolved();
     if (!bin) throw new HttpError(503, 'console_no_codex', CODEX_NO_CLI);
     const s = await settings();
@@ -394,7 +408,7 @@ export function createCodexRunner({ env, settings, searchPath, launcher, version
         return end.error;
       },
     });
-    armTimeout(rec, run, s.timeoutMs);
+    armTimeout(rec, run, timeoutMs || s.timeoutMs);
     child.stdin.end(text);
   }
 

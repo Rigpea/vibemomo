@@ -165,7 +165,7 @@ test('a task keeps its own model: given at create, set and cleared after, each c
   await assert.rejects(() => tasks.setTaskWorkerModel(ctx.path, 't_nothere1', 'default'), (err) => err.status === 404);
 
   const levels = workerModel.workerModelLevels({ studio: workerModel.studioWorkerModelOf({ workerModel: 'claude-sonnet-5-5' }), project: { id: 'p_x', name: 'X', record: { workerModel: 'claude-opus-5-5' } }, task: own });
-  assert.deepEqual([levels.studio.model, levels.project.model, levels.task.model, levels.effective], ['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-haiku-5-5', { model: 'claude-haiku-5-5', source: 'task', words: 'set for this task' }]);
+  assert.deepEqual([levels.studio.model, levels.project.model, levels.task.model, levels.effective], ['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-haiku-5-5', { model: 'claude-haiku-5-5', source: 'task', words: 'set for this task', backend: 'claude-code', label: 'claude-haiku-5-5' }]);
 });
 
 test('Focus panel: the identity line and the form send workerModel only when it changed', () => {

@@ -1,5 +1,7 @@
 // Thin, explicit git wrapper. Checkpoints are commits + tags; restore is a
 // hard reset after a safety checkpoint. Everything is run with `git -C <dir>`.
+import path from 'node:path';
+import fsp from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { HttpError, folderKey } from './paths.mjs';
@@ -22,6 +24,25 @@ export async function git(dir, args, { encoding = 'utf8', maxBuffer = 64 * 1024 
     if (allowFail) return null;
     const msg = (err.stderr || err.message || '').toString().trim();
     throw new HttpError(500, 'git_failed', `git ${args[0]} failed: ${msg}`);
+  }
+}
+
+/**
+ * Whether this process may write the repository's own folder. A sandbox can keep it read-only while the files
+ * beside it are writable: the Codex CLI's workspace-write did on 2026-11-14, where a commit failed with "Unable to
+ * create '…/.git/index.lock': Permission denied". Asked by creating and removing one empty file there; only a
+ * refusal (EPERM, EACCES, EROFS) answers false, and a folder that is no repository answers true (nothing to guard).
+ */
+export async function canWrite(dir) {
+  const out = await git(dir, ['rev-parse', '--absolute-git-dir'], { allowFail: true });
+  if (!out || !out.trim()) return true;
+  const probe = path.join(out.trim(), `atelier-write-check-${process.pid}-${Date.now()}`);
+  try {
+    await (await fsp.open(probe, 'wx')).close();
+    await fsp.rm(probe, { force: true });
+    return true;
+  } catch (err) {
+    return !['EPERM', 'EACCES', 'EROFS'].includes(err.code);
   }
 }
 

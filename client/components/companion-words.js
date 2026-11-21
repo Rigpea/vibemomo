@@ -34,6 +34,11 @@ export const modelWords = (id) => COMPANION_MODELS.find(([m]) => m === id)?.[1] 
 
 /** The header line: who answers, in words, as the concept's "Interface agent / run ui-03". */
 export const brainLine = (model) => `Claude Code · ${modelWords(model)} · your login`;
+/** Who runs a session, from its record: a Codex session (a Codex worker, the Codex tab) names Codex, its model, effort
+ *  and sandbox; every other session reads as brainLine. No record yet: Claude Code's line with no model. */
+export const sessionBrainLine = (session) => (session?.backend === 'codex'
+  ? `Codex · ${session.model || 'Codex\'s default model'} · ${session.effort ? `${session.effort} effort` : 'default effort'} · sandbox ${session.sandbox || 'read-only'}`
+  : brainLine(session?.model));
 
 export const MAKE_TASK_MESSAGE = 'Turn this thread into a studio task with atelier_create_task: a title, the request with the pins\' files named, the numbers of the pins it is about as pins, three acceptance lines, mode handle; then tell me the task id.';
 

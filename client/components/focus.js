@@ -4,6 +4,7 @@
 import { el, clear, button, input, select, textarea, field, toast, toastError, confirmDialog, dialog, loading, errorBox } from './ui.js';
 import { releaseRows } from './release-rows.js';
 import { COMPANION_MODELS } from './companion-words.js';
+import { WORKER_DEFAULT, parseWorker, workerName, workerPick, workerValue, isCodexChoice, codexWorkerOptions, codexWorkerEfforts, codexWorkerHint } from './worker-model-words.js';
 import { driftWords, driftPieces, catchUpTask, catchUpTitle, templatesOfKind } from './template-drift.js';
 import { groupUnresolved, firstItems, groupLine, FIRST_SHOWN, ADD_FIELD, resolveKey, resolveAllKey, itemKey, groupKey, resolveLabel, resolveAllLabel, focusAfterResolve, focusAfterResolveAll } from './unresolved-groups.js';
 
@@ -338,16 +339,19 @@ function templateRow(app, project) {
 const IDENTITY = [['purpose', 'Purpose'], ['audience', 'Audience'], ['inspiration', 'Inspiration'], ['direction', 'Direction']];
 // The model this project's workers start on (server/lib/models.mjs): none stored means the studio default, which the
 // studio's settings keep (settings.workerModel, server/lib/worker-model.mjs); none stored there means the built-in one.
-export const WORKER_DEFAULT = 'claude-fable-5-2';
-const modelName = (id) => COMPANION_MODELS.find(([m]) => m === id)?.[1] || id;
-/** The studio default as stored, when it is a model the studio offers; else null. */
-export const storedStudioDefault = (settings) => (COMPANION_MODELS.some(([m]) => m === settings?.workerModel) ? settings.workerModel : null);
+// A worker model is a Claude Code model id or a Codex one, codex:<model>[@<effort>] (worker-model-words.js): the
+// model select offers both and a second select holds a Codex model's effort.
+export { WORKER_DEFAULT };
+const modelName = (id, codex = null) => workerName(id, codex);
+/** The studio default as stored, when it is a model the studio takes; else null. */
+export const storedStudioDefault = (settings) => (parseWorker(settings?.workerModel) ? settings.workerModel : null);
 /** The studio default in effect: the stored one, else the built-in. */
 export const studioWorkerDefault = (settings) => storedStudioDefault(settings) || WORKER_DEFAULT;
-export const workerModelText = (project, settings) => (project.workerModel ? modelName(project.workerModel) : `${modelName(studioWorkerDefault(settings))} (studio default)`);
-export const workerModelChoices = (settings) => [['default', `Studio default (${modelName(studioWorkerDefault(settings))})`], ...COMPANION_MODELS];
+export const workerModelText = (project, settings, codex = null) => (parseWorker(project.workerModel) ? modelName(project.workerModel, codex) : `${modelName(studioWorkerDefault(settings), codex)} (studio default)`);
+/** codex: the Codex status route's answer (null: not read, so only a stored Codex model is offered); current: the stored value. */
+export const workerModelChoices = (settings, codex = null, current = null) => [['default', `Studio default (${modelName(studioWorkerDefault(settings), codex)})`], ...COMPANION_MODELS, ...codexWorkerOptions(codex, current)];
 /** The studio default's own choices: nothing stored (the built-in applies), or one of the models. */
-export const studioDefaultChoices = () => [['default', `Built in (${modelName(WORKER_DEFAULT)})`], ...COMPANION_MODELS];
+export const studioDefaultChoices = (codex = null, current = null) => [['default', `Built in (${modelName(WORKER_DEFAULT)})`], ...COMPANION_MODELS, ...codexWorkerOptions(codex, current)];
 /** The form's choice as a PATCH field: only when it changed, so saving the other identity fields never touches it. */
 export function workerModelPatch(project, choice) {
   const next = choice === 'default' ? null : choice;
@@ -369,20 +373,46 @@ function identitySection(app, project) {
     const keys = ['name', ...IDENTITY.map(([k]) => k)];
     const ctl = Object.fromEntries(keys.map((k) => [k, k === 'name' ? input({ value: project[k] || '' }) : textarea({ value: project[k] || '', rows: 2 })]));
     const settings = app.state.settings;
-    const worker = select(workerModelChoices(settings), project.workerModel || 'default', { dataset: { edit: 'worker-model' } });
+    // Each level is a model select and, for a Codex model, its effort select beside it (hidden otherwise). The Codex
+    // models are the ones the Codex tab reads (GET /api/console/codex); until that answers, and when it cannot be
+    // read, only a Codex model already stored is offered, so nothing chosen is ever dropped.
+    const level = (stored, choices, edit, onModel) => {
+      const pick = workerPick(stored);
+      const model = select(choices(null), pick.model, { dataset: { edit } });
+      const effort = select(codexWorkerEfforts(null, pick.model, pick.effort), pick.effort, { dataset: { edit: `${edit}-effort` }, 'aria-label': 'Codex effort', hidden: !isCodexChoice(pick.model) });
+      const note = el('div.hint', { hidden: true });
+      let codex = null;
+      const fill = (node, options, value) => { clear(node, options.map(([v, words]) => el('option', { value: v, selected: v === value }, words))); node.value = options.some(([v]) => v === value) ? value : options[0][0]; };
+      const sync = () => {
+        const on = isCodexChoice(model.value);
+        effort.hidden = !on;
+        if (on) fill(effort, codexWorkerEfforts(codex, model.value, model.value === pick.model ? pick.effort : ''), effort.value);
+        note.hidden = !on;
+        note.textContent = on ? codexWorkerHint(codex) : '';
+        onModel?.();
+      };
+      model.addEventListener('change', sync);
+      effort.addEventListener('change', () => onModel?.());
+      return { model, effort, note, value: () => workerValue(model.value, effort.hidden ? '' : effort.value),
+        offer: (status) => { codex = status; fill(model, choices(status), model.value); sync(); },
+        // The label names the model select; the effort select follows it (under it in the narrow panel), the Codex note under the hint.
+        field: (label, hint) => { const f = field(label, model, hint); const row = el('div.row.wrap'); model.replaceWith(row); row.append(model, effort); f.append(note); return f; } };
+    };
+    const worker = level(project.workerModel, (codex) => workerModelChoices(settings, codex, project.workerModel), 'worker-model');
     // The studio default is the studio's, not this project's: it is saved to the studio's settings, before the project.
-    const studio = select(studioDefaultChoices(), storedStudioDefault(settings) || 'default', { dataset: { edit: 'studio-worker-model' },
-      onchange: () => { worker.options[0].textContent = workerModelChoices({ workerModel: studio.value })[0][1]; } }); // the first choice names the default being chosen
+    const studio = level(storedStudioDefault(settings), (codex) => studioDefaultChoices(codex, storedStudioDefault(settings)), 'studio-worker-model',
+      () => { worker.model.options[0].textContent = workerModelChoices({ workerModel: studio?.value() }, null)[0][1]; }); // the first choice names the default being chosen
+    app.api.codexStatus?.().then((status) => { worker.offer(status); studio.offer(status); }).catch(() => {}); // not read: the Claude Code models and what is stored
     const saveBoth = async (partial) => {
-      const patch = studioDefaultPatch(app.state.settings, studio.value);
+      const patch = studioDefaultPatch(app.state.settings, studio.value());
       if (patch) {
         try { await app.api.patchSettings(patch); await app.loadStudio(); } catch (err) { return toastError(err, 'Could not save the studio default'); }
       }
       return onSave(partial);
     };
     return formShell('Identity', [...keys.map((k) => field(k[0].toUpperCase() + k.slice(1), ctl[k])),
-      field('Worker model', worker, 'This project\'s workers, unless their task names a model. Applies to the next worker started; a running worker keeps its model.'),
-      field('Studio default', studio, 'For every project that names no model. Applies to the next worker started.')], saveBoth, onCancel,
-      () => ({ ...Object.fromEntries(keys.map((k) => [k, ctl[k].value.trim()]).filter(([k, v]) => k !== 'name' || v)), ...workerModelPatch(project, worker.value) }));
+      worker.field('Worker model', 'This project\'s workers, unless their task names a model. Applies to the next worker started; a running worker keeps its model.'),
+      studio.field('Studio default', 'For every project that names no model. Applies to the next worker started.')], saveBoth, onCancel,
+      () => ({ ...Object.fromEntries(keys.map((k) => [k, ctl[k].value.trim()]).filter(([k, v]) => k !== 'name' || v)), ...workerModelPatch(project, worker.value()) }));
   });
 }

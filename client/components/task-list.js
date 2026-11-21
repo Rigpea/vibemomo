@@ -166,7 +166,7 @@ export function createTaskList(app, { compact = false, showStatus = compact, all
     if (!events.length) return el('p.small.muted', 'No events yet.');
     const list = (part) => el('ul.events', part.map((e) => el('li', { title: when(e.ts) },
       el('span.events-when', ago(e.ts)),
-      el('span.events-what', el('strong', eventWords(e.type)), ` · ${e.actor}`, e.data?.text ? ` — ${eventText(e)}` : '', eventVersions(e, names, result)))));
+      el('span.events-what', el('strong', eventWords(e.type, e.data)), ` · ${e.actor}`, e.data?.text ? ` — ${eventText(e)}` : '', eventVersions(e, names, result)))));
     const { earlier, recent } = splitEvents(events);
     return el('div', earlier.length ? keptOpen(`${tid}:earlier`, `${earlier.length} earlier`, list(earlier)) : null, list(recent));
   }

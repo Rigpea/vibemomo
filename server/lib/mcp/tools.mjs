@@ -13,7 +13,7 @@ import { LESSON_MAX_BYTES, LESSON_ID } from '../lessons.mjs';
 import { CARD_ID, BOARD_FILE, BOARD_DIR, cardLine, cardImage, boardCount } from '../inspiration.mjs';
 import { RULE_KINDS, RULES_FILE, ruleLine, rulesCount, byKind, lockedTokens } from '../rules.mjs';
 import { REF_ID, REFS_FILE, refLine, refFull, refsCount, findRefs } from '../references.mjs';
-import { CONSOLE_MODELS, WORKER_MODEL } from '../models.mjs';
+import { CONSOLE_MODELS, WORKER_MODEL, parseWorkerModel, workerWords } from '../models.mjs';
 import { usageText } from '../usage.mjs';
 import { liveWords, argvText } from '../../../client/components/live-words.js';
 
@@ -124,21 +124,44 @@ export function departmentProp(departments = null) {
 }
 
 export const WORKER_SCOPES = ['task', 'project', 'studio'];
-/** A worker model input: one of the studio's Claude Code models, or default (the level above decides). */
-export const modelProp = (what) => ({ type: 'string', enum: [...CONSOLE_MODELS, 'default'], description: `${what} One of ${CONSOLE_MODELS.join(', ')}, or default.` });
+/** What Codex offers a worker on this machine, in one sentence, from the studio's answer ({ models: [{ id, efforts }], defaults }); '' when not read. */
+export function codexOfferWords(codex) {
+  if (!codex?.models?.length) return '';
+  const d = codex.defaults || {};
+  const configured = d.model ? ` Codex is configured with ${d.model}${d.effort ? ` at ${d.effort}` : ''}.` : '';
+  return ` Codex offers on this machine: ${codex.models.map((m) => `${m.id} (${(m.efforts || []).join(', ')})`).join('; ')}.${configured}`;
+}
+/**
+ * A worker model input: one of the studio's Claude Code models, a Codex worker as codex:<model>@<effort>, or default
+ * (the level above decides). A described string, not an enum: Codex's models are read from the person's machine, and
+ * the routes behind the tools answer the 400 that names the choices. codex: the studio's live answer, when listed.
+ */
+export const modelProp = (what, codex = null) => ({ type: 'string', description: `${what} One of ${CONSOLE_MODELS.join(', ')} for a Claude Code worker; or, for a worker on the person's Codex CLI and its saved login, codex:<model>@<effort> (codex:<model> alone takes the effort Codex is configured with), for example codex:gpt-6-astra@xhigh; or default.${codexOfferWords(codex) || ' atelier_set_worker_model refuses a Codex model or effort this machine\'s Codex does not offer and names the ones it does.'}` });
+/** What a manager must know before it relies on a Codex worker: said once in the tools' descriptions and after a Codex model is set. */
+export const CODEX_WORKER_NOTE = 'A Codex worker runs the person\'s Codex CLI on the login saved there, in Codex\'s workspace-write sandbox: it edits files in the project folder, cannot write outside it or reach the internet, and cannot commit, so the studio keeps its version when its turn ends. It cannot run tools that need the person\'s own Windows account (seen: Unity batch mode finds no licence there), and it cannot take an explore task. Codex reports no cost.';
 const OLDER_STUDIO = 'the running studio is older than this tool and has no route for it; restart the studio';
 const isNoRoute = (err) => err?.status === 404 && /No route/.test(err.message || '');
+/** What a worker ran or runs on, from a start answer, the worker state or a handover event ({ backend, model, effort }). */
+export const ranWords = (o) => workerWords({ backend: o?.backend || 'claude-code', model: o?.model, effort: o?.effort });
+/** A handover event's worker in full, for the task report: the backend, the model and the effort it recorded. */
+export function ranOn(d = {}) {
+  if (!d.model) return 'a worker, model not recorded';
+  if (d.backend === 'codex') return `${ranWords(d)}, sandbox ${d.sandbox || 'workspace-write'}`;
+  return `Claude Code ${d.model}${d.effort ? ` at ${d.effort} effort` : ''}`;
+}
 
 /**
  * The worker model's three levels in words, from GET /api/projects/:id/worker-model ({ studio, project, task,
- * effective }): what each holds now, then the model the next worker starts on and where it comes from.
+ * effective }): what each holds now, then the model the next worker starts on and where it comes from. A Codex
+ * level reads "Codex <model> at <effort> effort"; a Claude Code model reads as its id.
  */
 export function workerModelText(f, { projectLabel = null } = {}) {
-  const studio = `studio default: ${f.studio.model}${f.studio.stored ? '' : ` (built in; none stored)`}`;
-  const project = f.project ? `project ${projectLabel || f.project.name}: ${f.project.model || 'none of its own'}` : null;
-  const task = f.task ? `task ${f.task.id}: ${f.task.model || 'none of its own'}` : null;
+  const words = (m) => (m ? workerWords(m) : 'none of its own');
+  const studio = `studio default: ${workerWords(f.studio.model)}${f.studio.stored ? '' : ` (built in; none stored)`}`;
+  const project = f.project ? `project ${projectLabel || f.project.name}: ${words(f.project.model)}` : null;
+  const task = f.task ? `task ${f.task.id}: ${words(f.task.model)}` : null;
   const out = [`Worker model now: ${[task, project, studio].filter(Boolean).join(' · ')}.`];
-  if (f.effective) out.push(`${f.task ? `The next worker of task ${f.task.id}` : `The next worker of ${projectLabel || f.project?.name || 'the project'}, on a task with no model of its own,`} starts on ${f.effective.model} (${f.effective.words}).`);
+  if (f.effective) out.push(`${f.task ? `The next worker of task ${f.task.id}` : `The next worker of ${projectLabel || f.project?.name || 'the project'}, on a task with no model of its own,`} starts on ${workerWords(f.effective.model)} (${f.effective.words}).`);
   return out.join(' ');
 }
 
@@ -231,6 +254,20 @@ export function createTools({ studio = DEFAULT_STUDIO, project: bound = null, se
     return p;
   }
   const pid = (p) => encodeURIComponent(p.id);
+
+  /** After a Codex worker model is set: the one sentence when Codex cannot run here now (no CLI, signed out), else ''. */
+  async function codexProblem() {
+    try { const s = await call('GET', '/api/console/codex'); return s?.problem ? ` Codex is not ready on this machine: ${s.problem}` : ''; } catch { return ''; }
+  }
+  /** For tools/list: what Codex offers a worker here, asked of the studio within LIST_WAIT_MS; null keeps the fixed words. */
+  async function codexOffer() {
+    try {
+      const res = await fetchImpl(`${origin}/api/settings/worker-model`, { signal: AbortSignal.timeout(LIST_WAIT_MS) });
+      return res.ok ? (await res.json())?.codex || null : null;
+    } catch { return null; }
+  }
+  /** A tool's schema with its model input naming Codex's models as they are now (listSchema). */
+  const withCodexModels = async (tool, what) => ({ ...tool.inputSchema, properties: { ...tool.inputSchema.properties, model: modelProp(what, await codexOffer()) } });
 
   async function findVersion(p, ref) {
     const list = (await call('GET', `/api/projects/${pid(p)}/versions`)) || [];
@@ -640,28 +677,31 @@ export function createTools({ studio = DEFAULT_STUDIO, project: bound = null, se
         const wantModel = args.model && args.model !== 'default' ? args.model : null;
         const task = await call('POST', `/api/projects/${pid(p)}/tasks`, { body: { title: args.title, request, acceptance: args.acceptance ?? [], mode: args.mode ?? 'handle', ...(args.department ? { department: args.department } : {}), ...(wantModel ? { workerModel: wantModel } : {}) } });
         // Said from the record the studio answered, not from what was asked: an older studio stores no model.
-        const modelWords = task.workerModel ? `, worker model ${task.workerModel} (set for this task)` : wantModel ? `, worker model NOT stored (${OLDER_STUDIO})` : '';
+        const modelWords = task.workerModel ? `, worker model ${workerWords(task.workerModel)} (set for this task)` : wantModel ? `, worker model NOT stored (${OLDER_STUDIO})` : '';
         return `Created task ${task.id} in ${label(p)}: "${task.title}", mode ${task.mode}${task.department ? `, department ${task.department.name}` : ''}${modelWords}, status ${task.status}${task.acceptance?.length ? `, ${task.acceptance.length} acceptance condition${task.acceptance.length === 1 ? '' : 's'}` : ''}${auras.length ? `, with ${auras.length === 1 ? 'the aura line' : `${auras.length} aura lines`} of the pinned page${auras.length === 1 ? '' : 's'}` : ''}. Nothing was handed over yet: start it with atelier_start_task.`;
       },
     },
     {
       name: 'atelier_start_task',
-      description: 'Hand a studio task to a worker: its own Claude Code session, high effort, that carries the task out while you keep talking with the person. The worker starts on the task\'s own model when it has one, else the project\'s, else the studio default (atelier_set_worker_model sets and shows all three; atelier_task_report names the one in effect). model sets the task\'s own model before it starts and keeps it for the task\'s later rounds; leave it out to change nothing. One worker writes in a project at a time; a task started while another works waits in the queue and starts when it ends. When the worker ends, the studio sends you a report in this conversation, marked as a studio report; review it then with atelier_task_report and atelier_review_task. Use it for every change to the project\'s files.',
+      description: `Hand a studio task to a worker: its own session that carries the task out while you keep talking with the person. A worker is a Claude Code session at high effort, or, when the worker model in effect is a Codex one (codex:<model>@<effort>), a session of the person's Codex CLI at that model and effort; the answer names which one started, with its model and effort. ${CODEX_WORKER_NOTE} A worker's turn may run 90 minutes; whatever ends it, you get a report. ` + 'The worker starts on the task\'s own model when it has one, else the project\'s, else the studio default (atelier_set_worker_model sets and shows all three; atelier_task_report names the one in effect). model sets the task\'s own model before it starts and keeps it for the task\'s later rounds; leave it out to change nothing. One worker writes in a project at a time; a task started while another works waits in the queue and starts when it ends. When the worker ends, the studio sends you a report in this conversation, marked as a studio report; review it then with atelier_task_report and atelier_review_task. Use it for every change to the project\'s files.',
       inputSchema: { type: 'object', properties: { project: projectProp, task: { type: 'string', pattern: '^t_[a-z0-9]+$', description: 'The task id, as atelier_create_task answered it.' }, model: modelProp('Set the task\'s own worker model before it starts (default clears it, so the project\'s or the studio default decides); leave it out to keep what the task has.') }, required: ['task'], additionalProperties: false },
+      // tools/list asks each time, so the model input names the models and efforts Codex offers on this machine now.
+      async listSchema() { return withCodexModels(this, 'Set the task\'s own worker model before it starts (default clears it, so the project\'s or the studio default decides); leave it out to keep what the task has.'); },
       async run(args) {
         const p = await projectOf(args);
         const out = await call('POST', `/api/projects/${pid(p)}/workers`, { body: { taskId: args.task, ...(args.model ? { workerModel: args.model } : {}), ...manager } });
-        // The model as the studio answered it; an older studio answers none and stored none.
-        const on = out.model ? ` on ${out.model}${out.modelSource ? ` (${{ task: 'set for this task', project: 'set for this project', studio: 'studio default' }[out.modelSource] || out.modelSource})` : ''}` : '';
+        // The backend, model and effort as the studio answered them (a Codex worker: "Codex <model> at <effort> effort");
+        // an older studio answers none and stored none.
+        const on = out.model ? ` on ${ranWords(out)}${out.modelSource ? ` (${{ task: 'set for this task', project: 'set for this project', studio: 'studio default' }[out.modelSource] || out.modelSource})` : ''}${out.backend === 'codex' ? ', the Codex CLI in its workspace-write sandbox' : ''}` : '';
         const unstored = args.model && out.model === undefined && !out.already ? ` The model was NOT set: ${OLDER_STUDIO}.` : '';
-        if (out.already) return `Task ${args.task} in ${label(p)} already has a worker (session ${out.sessionId}${out.model ? `, on ${out.model}` : ''}); it keeps that model.${out.next ? ` A later round of this task would start on ${out.next.model}.` : ''} You will get a studio report here when it ends.`;
+        if (out.already) return `Task ${args.task} in ${label(p)} already has a worker (session ${out.sessionId}${out.model ? `, on ${ranWords(out)}` : ''}); it keeps that model.${out.next ? ` A later round of this task would start on ${workerWords(out.next.model)}.` : ''} You will get a studio report here when it ends.`;
         if (out.state === 'queued') return `Task ${args.task} in ${label(p)} waits in the queue at position ${out.position}, behind ${out.behind}; it starts when that worker ends${on ? `,${on} as the records say now` : ''}.${unstored} Nothing more to do now: tell the person it is queued.`;
         return `Task ${args.task} in ${label(p)} went to a worker (session ${out.sessionId})${on}.${unstored} It runs on its own; you will get a studio report here when it ends.${out.queued ? ` ${out.queued} task${out.queued === 1 ? '' : 's'} wait${out.queued === 1 ? 's' : ''} behind it.` : ''}`;
       },
     },
     {
       name: 'atelier_task_report',
-      description: 'Read where the work stands. With a task id: its status, request and acceptance, the model its next worker would start on (and where that comes from: the task, the project or the studio default) and the model each of its workers ran on, the worker\'s notes and question, and its result (summary, verification, what was left open, the version and the files changed). Without one: the project\'s worker model in effect and its source, then every open task of the project with its status, the model it runs or will run on, its department, the worker running now and the queue.',
+      description: 'Read where the work stands. With a task id: its status, request and acceptance, the model its next worker would start on (and where that comes from: the task, the project or the studio default) and what each of its workers ran on (Claude Code or Codex, the model and the effort its handover recorded), the worker\'s notes and question, and its result (summary, verification, what was left open, the version and the files changed). Without one: the project\'s worker model in effect and its source, then every open task of the project with its status, the model it runs or will run on, its department, the worker running now and the queue.',
       inputSchema: { type: 'object', properties: { project: projectProp, task: { type: 'string', pattern: '^t_[a-z0-9]+$', description: 'The task id; leave it out for the overview.' } }, additionalProperties: false },
       async run(args) {
         const p = await projectOf(args);
@@ -672,23 +712,24 @@ export function createTools({ studio = DEFAULT_STUDIO, project: bound = null, se
           const [list, w, f] = await Promise.all([call('GET', `/api/projects/${pid(p)}/tasks`), call('GET', `/api/projects/${pid(p)}/workers`), levels()]);
           const rows = (Array.isArray(list) ? list : list?.tasks || []).filter((t) => !['done', 'cancelled'].includes(t.status));
           const modelOf = (t) => {
-            if (w.active?.tid === t.id) return ` · runs on ${w.active.model || 'a model this studio did not record'}`;
+            if (w.active?.tid === t.id) return ` · runs on ${w.active.model ? ranWords(w.active) : 'a model this studio did not record'}`;
             if (!f) return '';
-            return f.models.includes(t.workerModel) ? ` · will run on ${t.workerModel} (task)` : ` · will run on ${f.effective.model} (${SHORT[f.effective.source]})`;
+            return parseWorkerModel(t.workerModel) ? ` · will run on ${workerWords(t.workerModel)} (task)` : ` · will run on ${workerWords(f.effective.model)} (${SHORT[f.effective.source]})`;
           };
           const lines = rows.map((t) => `- ${t.id} · ${t.status}${w.active?.tid === t.id ? ' · a worker is on it' : w.queue.includes(t.id) ? ` · queued (${w.queue.indexOf(t.id) + 1})` : ''}${modelOf(t)} · ${t.department?.name ? `${t.department.name} department` : 'no department'} · ${t.title}`);
-          const model = f ? `Worker model of ${label(p)}: ${f.effective.model} (${f.effective.words}); studio default ${f.studio.model}${f.studio.stored ? '' : ' (built in; none stored)'}. A task's own model outranks both.` : `Worker model: not read (${OLDER_STUDIO}).`;
+          const model = f ? `Worker model of ${label(p)}: ${workerWords(f.effective.model)} (${f.effective.words}); studio default ${workerWords(f.studio.model)}${f.studio.stored ? '' : ' (built in; none stored)'}. A task's own model outranks both.` : `Worker model: not read (${OLDER_STUDIO}).`;
           return `${label(p)}: ${rows.length} open task${rows.length === 1 ? '' : 's'}${w.active ? `; worker on ${w.active.tid}` : '; no worker running'}${w.queue.length ? `; queue: ${w.queue.join(', ')}` : ''}${w.held ? `; ${w.held} report${w.held === 1 ? '' : 's'} held for you` : ''}.\n${model}\n${lines.join('\n') || '(none)'}`;
         }
         const [{ task, events = [], versionNames = {} }, f] = await Promise.all([call('GET', `/api/projects/${pid(p)}/tasks/${encodeURIComponent(args.task)}`), levels(args.task)]);
         const r = task.result || {};
-        const said = events.filter((e) => ['note', 'question', 'answer', 'queued', 'handed_to_console', 'worker_model', 'finished', 'ingested'].includes(e.type)).slice(-12)
-          .map((e) => `- ${e.at || ''} ${e.type}${e.actor ? ` (${e.actor})` : ''}${e.data?.text ? `: ${String(e.data.text).slice(0, 300)}` : ''}`);
-        // Each handover as its event recorded it: a worker's names its model; a Chat or terminal handover's does not.
-        const ran = events.filter((e) => e.type === 'handed_to_console').map((e) => `${e.data?.worker ? e.data.model || 'a worker, model not recorded' : 'a Chat session, model not in the task\'s events'}${e.ts ? ` (${e.ts})` : ''}`);
+        const said = events.filter((e) => ['note', 'question', 'answer', 'queued', 'handed_to_console', 'worker_model', 'finish_requested', 'finished', 'ingested'].includes(e.type)).slice(-12)
+          .map((e) => `- ${e.ts || e.at || ''} ${e.type}${e.actor ? ` (${e.actor})` : ''}${e.data?.text ? `: ${String(e.data.text).slice(0, 300)}` : ''}`); // events carry ts
+        // Each handover as its event recorded it: a worker's names its backend, model and effort (ranOn); a Chat or
+        // terminal handover's does not.
+        const ran = events.filter((e) => e.type === 'handed_to_console').map((e) => `${e.data?.worker ? ranOn(e.data) : 'a Chat session, model not in the task\'s events'}${e.ts ? ` (${e.ts})` : ''}`);
         return [
           `Task ${task.id} in ${label(p)}: "${task.title}" · status ${task.status} · mode ${task.mode}${task.department ? ` · department ${task.department.name}` : ''}`,
-          f ? `Worker model: the next worker of this task would start on ${f.effective.model} (${f.effective.words}). Ran on: ${ran.join('; ') || 'no worker yet'}.` : `Worker model: not read (${OLDER_STUDIO}). Ran on: ${ran.join('; ') || 'no worker yet'}.`,
+          f ? `Worker model: the next worker of this task would start on ${workerWords(f.effective.model)} (${f.effective.words}). Ran on: ${ran.join('; ') || 'no worker yet'}.` : `Worker model: not read (${OLDER_STUDIO}). Ran on: ${ran.join('; ') || 'no worker yet'}.`,
           `Request: ${String(task.request || '').slice(0, 1200)}`,
           task.acceptance?.length ? `Acceptance:\n${task.acceptance.map((a) => `- ${a}`).join('\n')}` : 'Acceptance: none written',
           said.length ? `Activity:\n${said.join('\n')}` : 'Activity: none yet',
@@ -715,37 +756,41 @@ export function createTools({ studio = DEFAULT_STUDIO, project: bound = null, se
     },
     {
       name: 'atelier_set_worker_model',
-      description: `Set or clear the model the studio's workers start on, at one of three levels. scope task: that task's own model (needs task), used for its every launch, queued starts and revise rounds after atelier_review_task included, until changed. scope project: the model of the project's workers whose task names none. scope studio: the studio default for every project that names none, kept across studio restarts. model is one of the studio's Claude Code models, or default, which clears that level so the next one decides: the task's, then the project's, then the studio default, then the built-in ${WORKER_MODEL}. The answer says what each level holds now and which model the next worker will actually start on. A running worker keeps its model: a change reaches the next worker started, with no restart. Nothing switches by itself; the model changes only when you or the person set it, so say which model you set and why (atelier_worker_usage shows how much each has been used).`,
+      description: `Set or clear the model the studio's workers start on, at one of three levels. scope task: that task's own model (needs task), used for its every launch, queued starts and revise rounds after atelier_review_task included, until changed. scope project: the model of the project's workers whose task names none. scope studio: the studio default for every project that names none, kept across studio restarts. model is one of the studio's Claude Code models; or codex:<model>@<effort> for a worker on the person's Codex CLI (for example codex:gpt-6-astra@xhigh; codex:<model> alone takes the effort Codex is configured with), refused with the models and efforts Codex offers here when it is not one of them; or default, which clears that level so the next one decides: the task's, then the project's, then the studio default, then the built-in ${WORKER_MODEL}. Claude Code workers stay the default: a Codex worker starts only where a level names one. ${CODEX_WORKER_NOTE} The answer says what each level holds now and which model the next worker will actually start on. A running worker keeps its model: a change reaches the next worker started, with no restart. Nothing switches by itself; the model changes only when you or the person set it, so say which model you set and why (atelier_worker_usage shows how much each has been used).`,
       inputSchema: { type: 'object', properties: { scope: { type: 'string', enum: WORKER_SCOPES, description: 'task (needs task), project, or studio (the default for every project).' }, model: modelProp('The model to set at that level; default clears the level.'), project: projectProp, task: { type: 'string', pattern: '^t_[a-z0-9]+$', description: 'The task id, for scope task.' } }, required: ['scope', 'model'], additionalProperties: false },
+      // tools/list asks each time, so the model input names the models and efforts Codex offers on this machine now.
+      async listSchema() { return withCodexModels(this, 'The model to set at that level; default clears the level.'); },
       async run(args) {
         if (!WORKER_SCOPES.includes(args.scope)) throw new Error(`scope must be ${WORKER_SCOPES.join(', ')} (got ${JSON.stringify(args.scope)}).`);
         if (args.scope === 'task' && !args.task) throw new Error('scope task needs task: the task id (t_…).');
         const older = (err) => { if (isNoRoute(err)) throw new Error(`Nothing was set: ${OLDER_STUDIO}.`); throw err; };
         const body = { workerModel: args.model, actor: 'companion' };
+        const named = workerWords(args.model); // a Claude Code model's id, or "Codex <model> at <effort> effort"
+        const codexNote = parseWorkerModel(args.model)?.backend === 'codex' ? ' ' + CODEX_WORKER_NOTE + (await codexProblem()) : '';
         const cleared = args.model === 'default' || args.model == null || args.model === '';
         // The project the answer speaks of: named or bound; scope studio needs none.
         const p = args.scope === 'studio' && !(args.project ?? bound) ? null : await projectOf(args);
         let did;
         if (args.scope === 'task') {
           await call('PUT', `/api/projects/${pid(p)}/tasks/${encodeURIComponent(args.task)}/worker-model`, { body }).catch(older);
-          did = cleared ? `Task ${args.task} in ${label(p)} has no worker model of its own now.` : `Task ${args.task} in ${label(p)}: its workers start on ${args.model}.`;
+          did = cleared ? `Task ${args.task} in ${label(p)} has no worker model of its own now.` : `Task ${args.task} in ${label(p)}: its workers start on ${named}.`;
         } else if (args.scope === 'project') {
           await call('GET', `/api/projects/${pid(p)}/worker-model`).catch(older); // an older studio would refuse the field or ignore it
           await call('PATCH', `/api/projects/${pid(p)}`, { body: { workerModel: args.model } });
-          did = cleared ? `${label(p)} has no worker model of its own now.` : `${label(p)}: its workers start on ${args.model} when their task names no model.`;
+          did = cleared ? `${label(p)} has no worker model of its own now.` : `${label(p)}: its workers start on ${named} when their task names no model.`;
         } else {
           const { studio } = await call('PUT', '/api/settings/worker-model', { body }).catch(older);
-          did = cleared ? `The studio default is cleared: nothing is stored, so the built-in ${studio.fallback} applies.` : `The studio default is ${studio.model} now, stored for every project that names no model.`;
-          if (!p) return `${did} Worker model now: studio default: ${studio.model}${studio.stored ? '' : ' (built in; none stored)'}. The next worker of a project and task with no model of their own starts on ${studio.model}. A running worker keeps the model it started on.`;
+          did = cleared ? `The studio default is cleared: nothing is stored, so the built-in ${studio.fallback} applies.` : `The studio default is ${workerWords(studio.model)} now, stored for every project that names no model.`;
+          if (!p) return `${did} Worker model now: studio default: ${workerWords(studio.model)}${studio.stored ? '' : ' (built in; none stored)'}. The next worker of a project and task with no model of their own starts on ${workerWords(studio.model)}. A running worker keeps the model it started on.${codexNote}`;
         }
         const [f, w] = await Promise.all([call('GET', `/api/projects/${pid(p)}/worker-model${args.scope === 'task' ? `?task=${encodeURIComponent(args.task)}` : ''}`), call('GET', `/api/projects/${pid(p)}/workers`)]);
-        const running = w.active ? `A worker is on ${w.active.tid} now${w.active.model ? `, on ${w.active.model}` : ''}; it keeps that model.` : 'A running worker keeps the model it started on.';
-        return `${did} ${workerModelText(f, { projectLabel: label(p) })} ${running}`;
+        const running = w.active ? `A worker is on ${w.active.tid} now${w.active.model ? `, on ${ranWords(w.active)}` : ''}; it keeps that model.` : 'A running worker keeps the model it started on.';
+        return `${did} ${workerModelText(f, { projectLabel: label(p) })} ${running}${codexNote}`;
       },
     },
     {
       name: 'atelier_worker_usage',
-      description: 'Read how much each model has been used by the studio\'s Claude Code sessions, to choose a worker model by: for the last 24 hours and the last 7 days, the sessions and turns per model, apart for workers, the companion (manager) and other studio sessions, with the tokens (in, out, cache read, cache write) and the cost figure Claude Code\'s result event reported for those turns, and a line saying so wherever a figure was not recorded. It is counted from the studio\'s own session records, nothing is estimated, and it does not know the plan\'s limits or what is left of them. Use it before atelier_set_worker_model when the person asks how much of a model is being used, or to move routine work to a cheaper model.',
+      description: 'Read how much each model has been used by the studio\'s Claude Code sessions, to choose a worker model by: for the last 24 hours and the last 7 days, the sessions and turns per model, apart for workers, the companion (manager) and other studio sessions, with the tokens (in, out, cache read, cache write) and the cost figure Claude Code\'s result event reported for those turns, and a line saying so wherever a figure was not recorded. Codex sessions (Codex workers and the Codex tab) are counted apart in each window: sessions, turns and the tokens Codex gave per model and effort, and no cost, because Codex reports none. It is counted from the studio\'s own session records, nothing is estimated, and it does not know either plan\'s limits or what is left of them. Use it before atelier_set_worker_model when the person asks how much of a model is being used, or to move routine work to a cheaper model.',
       inputSchema: { type: 'object', properties: { project: { type: 'string', description: 'Only this project\'s sessions: its id (p_…), slug or name. Leave it out for every project, since the plan is shared by all of them.' } }, additionalProperties: false },
       async run(args) {
         const p = args.project ? await projectOf({ project: args.project }) : null;

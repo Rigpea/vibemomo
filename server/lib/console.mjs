@@ -15,7 +15,7 @@ import { asksQuestion } from '../../client/components/companion-words.js';
 import { sessionName, sessionEnd, toolWords } from './runs.mjs';
 
 import { CONSOLE_MODELS } from './models.mjs';
-import { createCodexRunner, codexChoices, codexHome, checkCodexChoice, effortsOf, CODEX_DEFAULT_SANDBOX, CODEX_NO_CLI, CODEX_ROLE, CODEX_TOOLS_SENTENCE, codexSandboxSentence } from './codex.mjs';
+import { createCodexRunner, codexChoices, codexHome, checkCodexChoice, effortsOf, CODEX_DEFAULT_SANDBOX, CODEX_NO_CLI, CODEX_ROLE, CODEX_TOOLS_SENTENCE, codexSandboxSentence, CODEX_WORKER_ROLE, CODEX_WORKER_SANDBOX, CODEX_WORKER_SANDBOX_SENTENCE } from './codex.mjs';
 export { CONSOLE_MODELS }; // the list lives in models.mjs, where projects.mjs can read it without an import cycle
 /** The CLI's --effort levels (claude 2.1.316: low, medium, high, xhigh, max); null leaves the CLI's default. */
 export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
@@ -23,7 +23,8 @@ export const CONSOLE_BACKENDS = ['claude-code', 'api', 'command', 'codex']; // c
 // The CLI's --permission-mode choices (claude 2.1.316). A -p session cannot answer a prompt, so manual asks are denials.
 export const PERMISSION_MODES = ['plan', 'acceptEdits', 'auto', 'bypassPermissions', 'dontAsk', 'manual'];
 export const CONTEXTS = ['none', 'briefing', 'history'];
-/** A worker session's turn (server/lib/workers.mjs) may run long: a whole task, not one answer. */
+/** A worker session's turn (server/lib/workers.mjs) may run long: a whole task, not one answer. The same limit for a
+ *  Claude Code worker and a Codex one; past it the studio stops the run and the turn records "timed out". */
 export const WORKER_TIMEOUT_MS = 90 * 60 * 1000;
 export const CONSOLE_DEFAULTS = { command: '', commandMode: 'stdin', timeoutMs: 600000, claudePath: '', codexPath: '', terminalFont: '' };
 // Extra CLI rules for a session that reports back on a studio task (allowStudioCli): the studio
@@ -399,7 +400,9 @@ export function createConsole({ dataDir, studioDir, studioOrigin = DEFAULT_STUDI
       const choices = await codexChoices(codexHome(env));
       const m = model || choices.defaults.model || null;
       const kept = effort || (choices.defaults.effort && effortsOf(choices, m).includes(choices.defaults.effort) ? choices.defaults.effort : null);
-      ({ model, effort, sandbox } = checkCodexChoice(choices, { model: m, effort: kept, sandbox: sandbox || CODEX_DEFAULT_SANDBOX }));
+      // A worker edits files, so it is workspace-write and nothing else; any other session is read-only unless asked.
+      if (worker === true && sandbox != null && sandbox !== CODEX_WORKER_SANDBOX) throw new HttpError(400, 'invalid_input', `A Codex worker's sandbox is ${CODEX_WORKER_SANDBOX}`);
+      ({ model, effort, sandbox } = checkCodexChoice(choices, { model: m, effort: kept, sandbox: worker === true ? CODEX_WORKER_SANDBOX : sandbox || CODEX_DEFAULT_SANDBOX }));
     } else model = null;
     if (backend !== 'codex' && sandbox != null) throw new HttpError(400, 'invalid_input', 'Only a Codex session has a sandbox');
     permissionMode = permissionMode || 'acceptEdits';
@@ -427,7 +430,7 @@ export function createConsole({ dataDir, studioDir, studioOrigin = DEFAULT_STUDI
       taskId: taskId || null,
       // The bound task's department name, shown with the session's run (Processes); words only, the task holds the id.
       department: taskId && typeof department === 'string' && department.trim() ? shortLabel(department.trim(), 40) : null,
-      worker: worker === true && backend === 'claude-code', // run by the manager's worker queue (server/lib/workers.mjs)
+      worker: worker === true && (backend === 'claude-code' || backend === 'codex'), // run by the manager's worker queue (server/lib/workers.mjs)
       claudeSessionId: null, status: 'idle', createdAt: now, updatedAt: now, turns: [],
     };
     return save(rec);
@@ -728,6 +731,8 @@ export function createConsole({ dataDir, studioDir, studioOrigin = DEFAULT_STUDI
     const sandbox = rec.sandbox || CODEX_DEFAULT_SANDBOX;
     const told = rec.sandboxTold === sandbox;
     rec.sandboxTold = sandbox;
+    // A worker's one message is its task: the worker's role and what its sandbox means for the studio CLI, no pack.
+    if (first && rec.worker) return `${CODEX_WORKER_ROLE} ${CODEX_WORKER_SANDBOX_SENTENCE}\n\n${text}`;
     if (first) {
       const role = [CODEX_ROLE, rec.tools === 'studio' ? CODEX_TOOLS_SENTENCE : null, codexSandboxSentence(sandbox)].filter(Boolean).join(' ');
       return withContextPack(pack ? `${role}\n\n${pack}` : role, text);
@@ -755,7 +760,7 @@ export function createConsole({ dataDir, studioDir, studioOrigin = DEFAULT_STUDI
       // A Codex session's first message carries it too when it has a project, after its role (see codexInput).
       const first = !rec.turns.some((t) => t.role === 'user');
       let pack = null;
-      if (first && companionContext && ((rec.backend === 'claude-code' && rec.context === 'companion') || (rec.backend === 'codex' && rec.projectId))) {
+      if (first && companionContext && ((rec.backend === 'claude-code' && rec.context === 'companion') || (rec.backend === 'codex' && rec.projectId && !rec.worker))) {
         try { pack = await companionContext(rec); } catch (err) { console.error('[atelier] companion context failed', err.message); }
       }
       const codexText = rec.backend === 'codex' ? codexInput(rec, text, { first, pack }) : null;
@@ -766,7 +771,7 @@ export function createConsole({ dataDir, studioDir, studioOrigin = DEFAULT_STUDI
       send('console.started', { sessionId: id, runId: run.runId });
       registry?.start({ id: run.runId, kind: 'session', projectId: rec.projectId, name: sessionName(rec), department: rec.department || null });
       if (rec.backend === 'claude-code') await runClaude(rec, text, run, { pack });
-      else if (rec.backend === 'codex') await codex.run(rec, codexText, run, { contextUsed: pack ? CONTEXT_PACK_LABEL : null });
+      else if (rec.backend === 'codex') await codex.run(rec, codexText, run, { contextUsed: pack ? CONTEXT_PACK_LABEL : null, timeoutMs: rec.worker ? WORKER_TIMEOUT_MS : null });
       else if (rec.backend === 'command') await runCommand(rec, text, context, run, s);
       else await runApi(rec, context, run);
       return { runId: run.runId };
@@ -795,5 +800,5 @@ export function createConsole({ dataDir, studioDir, studioOrigin = DEFAULT_STUDI
   /** Whether a turn of this session runs in this process now (the worker queue's restart check). */
   const isRunning = (id) => runs.has(id);
 
-  return { backends, authStatus, codexStatus: (opts) => codex.status(opts), listSessions, sessionRecords, createSession, getSession, patchSession, deleteSession, send: sendMessage, cancel, isRunning };
+  return { backends, authStatus, codexStatus: (opts) => codex.status(opts), codexReady: () => codex.ready(), listSessions, sessionRecords, createSession, getSession, patchSession, deleteSession, send: sendMessage, cancel, isRunning };
 }

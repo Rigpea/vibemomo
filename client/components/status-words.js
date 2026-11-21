@@ -45,10 +45,14 @@ export function producedWords(result, nameOf, status, mode) {
   return `produced ${list(options)}${left}${after}`;
 }
 
-const EVENT_WORDS = { handed_to_console: 'handed to Claude Code', worker_interrupted: 'worker interrupted by a studio restart' }; // the stored type keeps the old name
+const EVENT_WORDS = { handed_to_console: 'handed to Claude Code', worker_interrupted: 'worker interrupted by a studio restart', finish_requested: 'finish recorded' }; // the stored type keeps the old name
 
-/** A task event's type as a row reads it. */
-export const eventWords = (type) => EVENT_WORDS[type] || String(type).replace(/_/g, ' ');
+/** A task event's type as a row reads it. data: the event's own, so a handover to a Codex worker names Codex with
+ *  the model and effort it recorded. */
+export function eventWords(type, data = null) {
+  if (type === 'handed_to_console' && data?.backend === 'codex') return `handed to Codex${data.model ? ` (${data.model}${data.effort ? `, ${data.effort} effort` : ''})` : ''}`;
+  return EVENT_WORDS[type] || String(type).replace(/_/g, ' ');
+}
 
 /** The state the Claude Code view's session header shows: a turn running is Working whatever the task's
  *  record says; otherwise the task the session is bound to, and nothing when it has none. */

@@ -84,7 +84,7 @@ when the project has none.
 ```json
 { "id":"v_..", "n":3, "sha":"<40hex>", "label":"Jump feels floaty", "note":"",
   "state":"experiment|integrated|selected|user-tested|released|recheck",
-  "origin":"user|claude-code|restore-safety|import|studio",
+  "origin":"user|claude-code|codex|restore-safety|import|studio",
   "parentId":"v_..", "pieceTitle":"", "taskId":null, "role":"option|finish",
   "userPreferred":false,
   "verified": null,
@@ -160,8 +160,10 @@ and files of every version in `versionIds` against the base, each once; with no 
 (`POST /tasks { workerModel }`), set or cleared later (`PUT /tasks/:tid/worker-model`, or `POST /workers { workerModel }`
 at a start), each change a `worker_model` event `{ model, before, text }`; it outranks the project's and the studio's
 (section 17).
-`events.jsonl`: `{ts, type, actor:"studio|claude-code|user|api|companion", data}` with types
-`created ready base_moved opened handed_to_console queued worker_model worker_interrupted started heartbeat note question finished ingested cancelled interrupted`.
+`events.jsonl`: `{ts, type, actor:"studio|claude-code|codex|user|api|companion", data}` with types
+`created ready base_moved opened handed_to_console queued worker_model worker_interrupted started heartbeat note question finish_requested finished ingested cancelled interrupted`
+(actor `codex`: the CLI run from a Codex session, `ATELIER_ACTOR`; `finish_requested`: a finish recorded where `.git`
+could not be written, beside `finish-request.json`, until the studio keeps the version: section 17, Codex workers).
 Status is DERIVED from events + result (never set by hand): a `working` task
 whose heartbeat is older than 30 min with no finish shows as `interrupted`
 (recoverable: reopening keeps the same record). `brief.md` is the full
@@ -483,6 +485,8 @@ Keyboard: every control reachable; visible focus ring; `?` opens shortcuts.
 4. Finish: `task finish <id> --summary "..." --verification "..." [--unresolved "..."]`.
    This checkpoints a dirty tree (origin `claude-code`), links the version, sets
    status `review` ("Ready to try"). The studio ingests on its next tick.
+   In a session that may not write the project's `.git` (a Codex worker's sandbox), the same command records the
+   finish instead and the studio keeps the version when the worker's turn ends (section 17, Codex workers).
    The version label is the task title cut at a word boundary to at most 80 chars
    (`shortLabel(title, 80)` in `server/lib/tasks.mjs`); the summary goes into the version
    note (`Task <id>: <summary>`).
@@ -1212,7 +1216,8 @@ with its answer, so it cannot keep anything running in the background; the studi
 - `atelier_start_task` (POST /api/projects/:id/workers { taskId, workerModel? }) hands a ready task to a worker: a
   Claude Code session with `worker: true`, effort high, permission mode Auto and the studio CLI, whose turn may run 90
   minutes (WORKER_TIMEOUT_MS). One worker writes in a project at a time; the next waits in the project's queue as a
-  Queued run (removed from the run list when it starts).
+  Queued run (removed from the run list when it starts). When the worker model in effect is a Codex one, the worker
+  is a session of the person's Codex CLI instead (**Codex workers**, below); Claude Code stays the default.
 - The worker model has three levels (server/lib/models.mjs `resolveWorkerModel`): the task's own (task.json
   `workerModel`), else the project's (project.json `workerModel`), else the studio default, which is the registry's
   `settings.workerModel` when one is stored and the built-in `WORKER_MODEL` (Fable 5.2) when not
@@ -1221,9 +1226,11 @@ with its answer, so it cannot keep anything running in the background; the studi
   the model its session was created with. The `handed_to_console` event records `model`, `modelSource`
   (`task|project|studio`) and effort; the worker state's `active` carries `model`, and the answers of POST …/workers
   name it (`model`, `modelSource`; a task that already runs answers `already: true` with its worker's model and
-  `next`). Every level takes one of `CONSOLE_MODELS`, or `null` / `"default"` to clear it; anything else is the same
-  400 `invalid_input` (`workerModel must be one of …, or default (got …)`, `checkWorkerModel`) and writes nothing. A
-  value typed into a record by hand that the studio does not offer counts as none.
+  `next`). Every level takes one of `CONSOLE_MODELS`, a Codex worker model (`codex:<model>` or
+  `codex:<model>@<effort>`, below), or `null` / `"default"` to clear it; anything else is the same 400
+  `invalid_input` (`workerModel must be one of …, or default (got …); or codex:<model> or codex:<model>@<effort> for a
+  worker on the Codex CLI`, `checkWorkerModel`) and writes nothing. A value typed into a record by hand that the
+  studio does not take counts as none.
   - Routes: `GET /api/settings/worker-model` → `{ models, studio: { stored, fallback, model } }`; `PUT` the same with
     `{ workerModel }` (required; `PATCH /api/settings { workerModel }` goes through the same check and write);
     `GET /api/projects/:id/worker-model[?task=<tid>]` → `{ models, studio, project: { id, name, model }, task: { id,
@@ -1238,8 +1245,82 @@ with its answer, so it cannot keep anything running in the background; the studi
     events), and in the overview the project's model in effect, its source and the studio default.
   - The Focus panel's Identity line reads the model in effect (`<name> (studio default)` from the stored default);
     its form has the project's select, whose first choice names the stored default, and a Studio default select
-    (`Built in (<name>)` clears it), saved to the settings before the project.
+    (`Built in (<name>)` clears it), saved to the settings before the project. Both selects list the Claude Code
+    models, then the Codex models of the status route the Codex tab reads (`GET /api/console/codex`), as
+    `Codex · <name>`; a Codex choice shows a second select with the efforts that model takes, after "Effort Codex is
+    configured with", and one note saying what a Codex worker is, or why Codex is not ready. The pair is stored as
+    one value (client/components/worker-model-words.js `workerPick`, `workerValue`); until the status answers, and
+    with no CLI, only a Codex model already stored is offered, and the line reads `Codex · <model> · <effort> effort`.
+    A task row's Activity and the inspector name a Codex session as `Codex · <model> · <effort> effort · sandbox
+    <sandbox>` (`sessionBrainLine`), its handover reads "handed to Codex (<model>, <effort> effort)", and the Versions
+    drawer names the origin Codex.
   - Nothing switches a model by itself: it changes only when the person or the manager sets it.
+- **Codex workers** (decision row 182). A worker model is one string at every level, and a Codex one reads
+  `codex:<model>` or `codex:<model>@<effort>` (models.mjs `parseWorkerModel`, `codexWorkerValue`, `workerWords`; the
+  model as Codex names it, no `@` in it; the effort two to twelve lower-case letters). With no effort named the
+  session takes the one `~/.codex/config.toml` names, when the model takes it. `checkWorkerModel` checks the form;
+  whether Codex offers that model and effort on this machine is `checkCodexWorker` (worker-model.mjs: the Codex tab's
+  `checkCodexChoice` over `models_cache.json`, else the built-in list), asked by every route that stores a worker
+  model, by `POST …/workers` and by the CLI's `project set worker-model`, so an unknown model or an effort the model
+  does not take is a 400 naming what Codex offers, and nothing is stored. `GET /api/settings/worker-model` and
+  `GET /api/projects/:id/worker-model` also answer `codex: { models: [{ id, name, efforts }], source, defaults }`,
+  and `effective` gains `backend`, `label` (the words) and, for Codex, `codexModel` and `effort`.
+  - **The session.** `launch` asks `consoleSvc.codexReady()` first (no CLI: 503 `console_no_codex`; signed out: 503
+    `console_codex_signed_out`; nothing is handed over), then creates `{ backend: 'codex', worker: true, model,
+    effort, sandbox: 'workspace-write', taskId }` with no studio tools. A worker's sandbox is `workspace-write` and
+    nothing else (`createSession` refuses another for a worker); its argv is section 21's, so `exec --json
+    --skip-git-repo-check -m <model> -c model_reasoning_effort="<effort>" -c sandbox_mode="workspace-write" -` and
+    never a `--dangerously-…` flag, `danger-full-access`, `--approve-for-me`, an approval policy, `--add-dir`, a
+    writable root or network access. Its env is every Codex run's: no `OPENAI_API_KEY`, `CODEX_API_KEY` or
+    `CODEX_ACCESS_TOKEN`, so it can only use the login saved in the Codex CLI, plus `ATELIER_ACTOR=codex`. Its turn
+    has the worker's 90 minutes (`codex.run`'s `timeoutMs`); Codex is given no limit of its own, and past the
+    studio's the run is stopped and the turn records `timedOut`.
+  - **Its one message** is the task prompt every worker gets (`consolePrompt`, the department paragraph, the
+    manager's note), after `CODEX_WORKER_ROLE` and `CODEX_WORKER_SANDBOX_SENTENCE` (codex.mjs) in place of the tab's
+    role and with no context pack: it is alone, nobody can answer or approve during the turn, a refusal is a block to
+    report with `task question`, it cannot write `.git`, and `task finish` records its finish. The record keeps the
+    prompt alone.
+  - **The finish.** Codex's workspace-write sandbox keeps the project's `.git` read-only, so a worker cannot commit
+    (seen on 2026-11-14: `git add failed: fatal: Unable to create '…/.git/index.lock': Permission denied`). The
+    CLI's `task finish` therefore asks first (`git.canWrite`: one empty file created and removed in the git folder;
+    only EPERM, EACCES or EROFS answer no) and, where it may not write, records the finish instead
+    (`tasks.finishOrRequest` → `requestFinish`): `.studio/tasks/<id>/finish-request.json { summary, verification,
+    unresolved, decisions, actor, requestedAt }` and a `finish_requested` event, the task still `working`, because no
+    version exists yet. When the worker's turn ends, `onTurnEnd` runs `tasks.completeFinishRequest` outside the
+    sandbox, before the folder is freed for the next worker: the usual `finishTask` (checkpoint, result, `finished`
+    event, status `review`) with the version's `origin` `codex`, and the record is removed. A failure there is the
+    report ("did not finish: it recorded its finish, but the studio could not keep the version: …") and the record
+    stays. A launch drops a record an earlier round left; a restart that cut a worker off after its record keeps the
+    version in `reconcile`. Where `.git` is writable `task finish` is the finish itself, as before. The CLI's
+    `checkpoint` and `restore` cannot run in the sandbox, so an explore task is refused a Codex worker (409
+    `codex_no_explore`, at `start`, before a handover or a queue entry).
+  - **What is recorded and said.** The `handed_to_console` event holds `backend`, `model`, `effort`, `sandbox`
+    (Codex) and `modelSource`, from the session's own record; the worker state's `active` and the answers of
+    `POST …/workers` carry `backend`, `model` and `effort` (`effort: null` only while a queued Codex task names
+    none). The CLI records its caller from `ATELIER_ACTOR` (`tasks.actorOf`), so a Codex worker's `started`, `note`,
+    `question` and `finished` events have actor `codex`. `atelier_start_task` answers "on Codex <model> at <effort>
+    effort (<source>), the Codex CLI in its workspace-write sandbox"; `atelier_task_report` reads "Ran on: Codex
+    <model> at <effort> effort, sandbox workspace-write" or "Claude Code <model> at <effort> effort" per handover
+    (`ranOn`); `atelier_set_worker_model` words each level with `workerWords` and, after a Codex model is set, says
+    once what a Codex worker is (`CODEX_WORKER_NOTE`) and when Codex is not ready (`GET /api/console/codex`'s
+    `problem`). The tools' `model` input is a described string (the enum is gone: Codex's models are read from the
+    machine), and `tools/list` names the models and efforts Codex offers now (`listSchema`).
+  - **When it does not finish.** `codex exec` never asks: a command the sandbox refuses fails and Codex is told, so
+    there is no approval to wait for. A turn that ends with no finish and no question reports "did not finish: its
+    turn ended without finishing (status working); its last words: …", followed by the last failed or refused
+    command of the turn with what it printed (`lastFailure`); an error, a refused model, a lost login and a timeout
+    report with their text as any worker's do (`endWords`).
+  - **What the sandbox allowed on this machine** (three real turns on 2026-11-14, codex-cli 0.160.0, `[windows]
+    sandbox = "elevated"`, gpt-6-astra at low effort; docs/evidence/codex-worker-2026-11-14.json). Commands ran as the
+    Windows user `CodexSandboxOffline`. Allowed: editing files in the project folder, the studio CLI's handover,
+    start and note (they write `.studio/` and only read the studio's data folder), reading files outside the folder,
+    writing the temp folder, and loopback (`curl http://127.0.0.1:4747/api/health` answered). Refused: writing
+    `.git` (above), writing outside the folder ("Access to the path … is denied"), and the internet (`curl
+    https://example.com` → `000`). A Unity project's batch-mode compile could not run: `mkdir: cannot create
+    directory '/c/Users/<the person>': Permission denied`, WMI "Access denied", and Unity's "No valid Unity Editor
+    license found" (exit 198), because the licence belongs to the person's own Windows account. The studio widens
+    nothing: extra writable folders, network access or another Windows sandbox mode are the person's to set in their
+    Codex configuration, and the studio passes none of them.
 - Usage to choose by (server/lib/usage.mjs `tallyUsage`, `GET /api/workers/usage[?projectId=]`, the tool
   `atelier_worker_usage { project? }`): counted from the console's own session records (`sessionRecords()`), for the
   last 24 hours and the last 7 days, one row per model and kind (worker, companion, other Claude Code session):
@@ -1249,7 +1330,12 @@ with its answer, so it cannot keep anything running in the background; the studi
   counts in a window when it ended in it, under the model Claude Code reported for the turn (a sub-agent's message
   does not change a turn's model), else the session's. API and command sessions, a turn still running, deleted
   sessions and Claude Code run in a terminal or outside the studio are not counted. Nothing is estimated, and the
-  studio does not know the plan's limits or what is left of them; the tool's answer says so.
+  studio does not know the plan's limits or what is left of them; the tool's answer says so. Codex sessions are
+  counted apart and are in none of those figures: each window has `codex: { sessions, turns, apiKeyTurns, rows }`
+  with one row per kind (`worker`, or `other` for the Codex tab), model and effort, holding sessions, turns and the
+  tokens Codex's `turn.completed` gave (`input`, `output`, `cachedInput`, `reasoningOutput`), and the tally has
+  `codexSessionsRead`. A Codex row has no cost: Codex reports none, and the text says "cost: none (Codex reports no
+  cost)", how many turns ran on an API key saved in Codex, and that the studio knows neither plan's limits.
 - Each worker knows its manager. A Studio tools session's MCP server is started with its console session id
   (studioMcpConfig: `env.ATELIER_SESSION_ID`; `--session` by hand), and `atelier_start_task` and
   `atelier_review_task` send it as `managerSessionId` (POST …/workers and …/tasks/:tid/review; a malformed id is a
@@ -1662,7 +1748,12 @@ out of it for this tab). Its own:
 - **Elsewhere**: the Claude Code view lists a Codex session with its model and sandbox in the head and no context
   select; its New session dialog does not offer Codex (`BACKENDS.codex.ownTab`). A turn's meta line reads
   `<model>, <effort> effort, sandbox <sandbox> · <time> · <tokens> · on your ChatGPT login` (or "billed to the API key
-  saved in Codex"). The usage tally (section 17) counts Claude Code sessions only.
+  saved in Codex"). The usage tally (section 17) counts Codex sessions apart from Claude Code's, with no cost.
+
+**A Codex worker** (section 17, Codex workers) is this backend with `worker: true`: always `workspace-write`, no studio
+tools, the worker's role in place of `CODEX_ROLE`, no context pack, the worker's 90 minutes, and every child's env
+carries `ATELIER_ACTOR=codex` so the studio CLI it runs records Codex as the caller. Nothing else differs: the same
+argv, the same stripped env, the same parser and records.
 
 **Checked by** tests/codex.test.mjs (the config and cache readers, the argv with and without resume and MCP and never a
 bypass, the choice check, the parser on every item kind, the two failure sentences, and through the console with
@@ -1676,7 +1767,14 @@ gpt-6-astra at low effort, its `git status --short` as a Run row, a file it was 
 read-only, the second message on the same thread id calling `atelier_read_briefing`, the session after a real reload,
 and `~/.codex/config.toml` with the same hash before and after. The `file_change` events were read from one real
 workspace-write turn in a throwaway folder (a probe, not the tab); `reasoning`, `todo_list` and `web_search` items were
-not seen from the real CLI.
+not seen from the real CLI. Codex workers: tests/codex-worker.test.mjs (the stored form on both sides, the check
+against what Codex offers, the recorded finish and its completion with a real repository, the CLI's caller, usage
+apart and with no cost, the tools' and the Focus panel's words, and through a real server with the fake CLI: a task
+set to a Codex model ends in a version and a report; a refused command, a question and a lost login end in a truthful
+report or refusal), tests/workers.test.mjs (the launch, the explore refusal, the turn's end) and tests/codex.test.mjs
+(the worker session's argv, env and first message); `scripts/ui-check/verify-worker-model.cjs` (34 checks, the Focus
+form with the fake CLI); and three real turns on 2026-11-14, the third a whole task through a private studio and the
+manager's tools (docs/evidence/codex-worker-2026-11-14.json).
 
 ## 22. Inspiration board
 

@@ -8,7 +8,7 @@
 import { el, clear, button, stateChip } from './ui.js';
 import { toolRows } from './transcript.js';
 import { matchRows } from './transcript-match.js';
-import { brainLine, trajectoryLabel, companionState, questionWords, toolObject, intentLine, firstSentenceOf } from './companion-words.js';
+import { sessionBrainLine, trajectoryLabel, companionState, questionWords, toolObject, intentLine, firstSentenceOf } from './companion-words.js';
 import { projectRel, fileOfEvent } from './source-words.js';
 
 export const TERMINAL_LINE = 'Activity: the studio does not see a terminal session\'s tool calls';
@@ -171,7 +171,7 @@ export function createActivity(app) {
     m.state = el('div.activity-state', stateNodes(r));
     const rows = toolRows(activityEvents(r.session, r.live), trajectoryLabel, fileButtons(t));
     return [
-      el('p.meta.activity-who', { title: r.session ? `${r.session.title || 'Chat session'} · ${sid}` : sid }, brainLine(r.session?.model)),
+      el('p.meta.activity-who', { title: r.session ? `${r.session.title || 'Chat session'} · ${sid}` : sid }, sessionBrainLine(r.session)),
       intentOf(t) ? el('p.activity-intent', intentOf(t)) : null,
       m.state,
       rows || el('p.meta', r.running ? 'No tool call yet.' : 'No tool calls.'),

@@ -11,7 +11,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createConsole } from '../server/lib/console.mjs';
-import { codexArgs, createCodexParser, parseCodexConfig, parseCodexModels, codexChoices, checkCodexChoice, commandWords, codexErrorOf, parseLoginStatus, dropCodexKeys, CODEX_FALLBACK_MODELS, CODEX_NO_CLI, CODEX_SIGNED_OUT } from '../server/lib/codex.mjs';
+import { codexArgs, createCodexParser, parseCodexConfig, parseCodexModels, codexChoices, checkCodexChoice, commandWords, codexErrorOf, parseLoginStatus, dropCodexKeys, CODEX_FALLBACK_MODELS, CODEX_NO_CLI, CODEX_SIGNED_OUT, CODEX_WORKER_ROLE, CODEX_WORKER_SANDBOX_SENTENCE, CODEX_WORKER_SANDBOX, CODEX_STRIPPED_ENV } from '../server/lib/codex.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FAKE = path.join(HERE, 'fixtures', 'fake-codex.mjs');
@@ -391,4 +391,38 @@ test('codex: Stop cancels the running turn', async () => {
   const done = await finished(runId);
   assert.equal(done.payload.turn.cancelled, true);
   assert.equal(done.type, 'console.done');
+});
+
+// ---------- a Codex worker's session (server/lib/workers.mjs starts it; decision row 182) ----------
+test('codex worker session: workspace-write and nothing else, the worker\'s role in place of the tab\'s, no context pack, no key in the env, Codex named as the caller of the studio CLI', async () => {
+  const { c, finished, statusLines } = setup({
+    env: { OPENAI_API_KEY: 'sk-should-not-leak', CODEX_API_KEY: 'k', CODEX_ACCESS_TOKEN: 't', ATELIER_ACTOR: 'someone-else' },
+    companionContext: async () => 'Studio context (test pack)',
+  });
+  assert.deepEqual(CODEX_STRIPPED_ENV, ['OPENAI_API_KEY', 'CODEX_API_KEY', 'CODEX_ACCESS_TOKEN']);
+  assert.equal(CODEX_WORKER_SANDBOX, 'workspace-write');
+  await assert.rejects(() => c.createSession({ backend: 'codex', projectId: 'p_x', worker: true, sandbox: 'read-only' }), (err) => err.status === 400 && /A Codex worker's sandbox is workspace-write/.test(err.message));
+  await assert.rejects(() => c.createSession({ backend: 'codex', projectId: 'p_x', worker: true, sandbox: 'danger-full-access' }), (err) => err.status === 400);
+  const s = await c.createSession({ backend: 'codex', projectId: 'p_x', worker: true, taskId: 't_abc', model: 'gpt-b', effort: 'medium', title: 'Task · A note' });
+  assert.deepEqual([s.worker, s.sandbox, s.model, s.effort, s.tools, s.taskId, s.allowStudioCli, s.permissionMode], [true, 'workspace-write', 'gpt-b', 'medium', null, 't_abc', false, null]);
+  const plain = await c.createSession({ backend: 'codex', projectId: 'p_x' });
+  assert.deepEqual([plain.worker, plain.sandbox], [false, 'read-only'], 'a session that is no worker is read-only as before');
+
+  const done = await finished((await c.send(s.id, { text: 'Work on the task.' })).runId);
+  const turn = done.payload.turn;
+  assert.equal(done.type, 'console.done');
+  const preface = `${CODEX_WORKER_ROLE} ${CODEX_WORKER_SANDBOX_SENTENCE}`;
+  assert.ok(turn.text.includes(`echo: ${preface}\n\nWork on the task.`), turn.text.slice(0, 300));
+  assert.ok(!/You are answering in the Codex tab/.test(turn.text), 'not the role of the tab');
+  assert.ok(!/Studio context/.test(turn.text), 'a worker reads its brief; it gets no context pack');
+  assert.equal(turn.contextUsed, undefined);
+  for (const part of ['do not look for a way around it', 'Run the task question command', 'You cannot write this folder\'s .git', 'the studio keeps the version when your turn ends']) assert.ok(preface.includes(part), part);
+  const argv = statusLines(turn, 'argv')[0];
+  assert.equal(argv, 'argv ["exec","--json","--skip-git-repo-check","-m","gpt-b","-c","model_reasoning_effort=\\"medium\\"","-c","sandbox_mode=\\"workspace-write\\"","-"]');
+  // Nothing that removes the sandbox or the approvals, and nothing that widens the sandbox: those are the person's to choose.
+  for (const never of ['dangerously', 'danger-full-access', 'approve-for-me', 'ask-for-approval', 'approval_policy', '--add-dir', 'writable_roots', 'network_access', '-s']) assert.ok(!JSON.parse(argv.slice(5)).some((a) => a === never || (never.length > 2 && a.includes(never))), `never ${never}`);
+  assert.deepEqual(statusLines(turn, 'env'), ['env OPENAI_API_KEY=absent CODEX_API_KEY=absent ANTHROPIC_API_KEY=absent CLAUDECODE=absent CLAUDE_CODE_ENTRYPOINT=absent']);
+  assert.deepEqual(statusLines(turn, 'actor'), ['actor ATELIER_ACTOR=codex CODEX_ACCESS_TOKEN=absent'], 'the studio names the caller itself, whatever the env of the server said');
+  assert.deepEqual(statusLines(turn, 'mcp'), []);
+  assert.equal((await c.getSession(s.id)).turns[0].text, 'Work on the task.', 'the record keeps the task prompt alone');
 });

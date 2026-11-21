@@ -6,7 +6,7 @@
 // session's own events (task-activity.js); nothing is summarised or invented.
 import { el, clear, button, chip, ago } from './ui.js';
 import { createActivity } from './task-activity.js';
-import { brainLine, clock, intentLine } from './companion-words.js';
+import { sessionBrainLine, clock, intentLine } from './companion-words.js';
 import { taskState } from './status-words.js';
 import { markdown } from './markdown.js';
 
@@ -56,7 +56,7 @@ export function createTaskInspector(app, { sourceOf, onFollow, onAsk }) {
     ref.textContent = `${name} / task ${t.id}`;
     renderWhen(rec, source);
     title.textContent = t.title;
-    who.textContent = source?.terminal ? 'Claude Code · in a terminal · your login' : rec?.session ? brainLine(rec.session.model) : source ? 'Claude Code · reading the session…' : 'No session yet';
+    who.textContent = source?.terminal ? 'Claude Code · in a terminal · your login' : rec?.session ? sessionBrainLine(rec.session) : source ? 'Reading the session…' : 'No session yet';
     const line = typeof t.intent === 'string' || t.intent === null ? t.intent || null : intentLine(t);
     intent.hidden = !line;
     intent.textContent = line || '';
@@ -84,7 +84,7 @@ export function createTaskInspector(app, { sourceOf, onFollow, onAsk }) {
     const last = [...turns].reverse().find((x) => x.role !== 'user' && x.text);
     if (!rec?.session) return el('p.meta', rec?.loading ? 'Reading the session…' : 'Open Activity first: the output is read with the session.');
     if (!last) return el('p.meta', rec.running ? 'No answer yet.' : 'The session wrote no answer.');
-    return el('div.insp-output', markdown(last.text, 'prose'), el('p.meta', `Claude Code · ${ago(last.at)}`));
+    return el('div.insp-output', markdown(last.text, 'prose'), el('p.meta', `${rec.session.backend === 'codex' ? 'Codex' : 'Claude Code'} · ${ago(last.at)}`));
   }
 
   function renderWhen(rec, source) {

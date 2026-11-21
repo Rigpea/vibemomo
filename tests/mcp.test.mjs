@@ -609,10 +609,11 @@ test('worker models from a manager session: set and clear at task, project and s
   assert.equal(noTask.result.isError, true);
   assert.match(textOf(noTask), /scope task needs task/);
 
-  // An unknown model: the tool's schema refuses it, and behind it every route answers the same 400 naming the choices.
+  // An unknown model: the tool answers an error, because every route behind it answers the same 400 naming the choices
+  // (the model input is a described string since Codex workers: decision row 182).
   const schema = await set({ scope: 'studio', model: 'gpt-5' });
   assert.equal(schema.result.isError, true);
-  const NAMED = /^workerModel must be one of claude-fable-5-2, claude-fable-5-1, claude-opus-5-5, claude-sonnet-5-5, claude-haiku-5-5, or default \(got "gpt-5"\)$/;
+  const NAMED = /^workerModel must be one of claude-fable-5-2, claude-fable-5-1, claude-opus-5-5, claude-sonnet-5-5, claude-haiku-5-5, or default \(got "gpt-5"\); or codex:<model> or codex:<model>@<effort> for a worker on the Codex CLI$/;
   const tool = tools.find((t) => t.name === 'atelier_set_worker_model');
   for (const scope of ['studio', 'project', 'task']) await assert.rejects(() => tool.run({ scope, model: 'gpt-5', task: tid }), (err) => err.status === 400 && NAMED.test(err.message), scope);
   for (const [method, p, body] of [['PUT', '/api/settings/worker-model', { workerModel: 'gpt-5' }], ['PATCH', '/api/settings', { workerModel: 'gpt-5' }], ['PATCH', `/api/projects/${projectId}`, { workerModel: 'gpt-5' }], ['PUT', `/api/projects/${projectId}/tasks/${tid}/worker-model`, { workerModel: 'gpt-5' }], ['POST', `/api/projects/${projectId}/tasks`, { request: 'Never made.', workerModel: 'gpt-5' }], ['POST', `/api/projects/${projectId}/workers`, { taskId: tid, workerModel: 'gpt-5' }]]) {
@@ -636,9 +637,9 @@ test('worker models from a manager session: set and clear at task, project and s
   }
   assert.deepEqual([rec.turns.length, rec.turns[1].model, rec.turns[1].costUsd], [2, 'claude-haiku-5-5', 0.0123], 'the CLI was started with --model claude-haiku-5-5 and its result was recorded');
   const detail = textOf(await call('atelier_task_report', { task: tid }));
-  assert.match(detail, /\nWorker model: the next worker of this task would start on claude-haiku-5-5 \(set for this task\)\. Ran on: claude-haiku-5-5 \(20\d\d-/);
+  assert.match(detail, /\nWorker model: the next worker of this task would start on claude-haiku-5-5 \(set for this task\)\. Ran on: Claude Code claude-haiku-5-5 at high effort \(20\d\d-/);
   const handed = (await api('GET', `/api/projects/${projectId}/tasks/${tid}`)).data.events.find((e) => e.type === 'handed_to_console');
-  assert.deepEqual([handed.data.model, handed.data.modelSource, handed.data.sessionId], ['claude-haiku-5-5', 'task', sid]);
+  assert.deepEqual([handed.data.backend, handed.data.model, handed.data.effort, handed.data.modelSource, handed.data.sessionId], ['claude-code', 'claude-haiku-5-5', 'high', 'task', sid]);
 
   // The usage tally reads that session record: sessions and turns per model, the figures the result event reported.
   const usage = await call('atelier_worker_usage');

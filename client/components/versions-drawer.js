@@ -5,7 +5,7 @@ import { el, clear, button, icon, stateChip, ago, when, toast, toastError, dialo
 import { vname, fullName, compareDialog, restoreDialog, stateSelect, stateLabel, stateMeaning, PREFERRED_MEANING } from './version-actions.js';
 import { versionRowId } from './version-strip.js';
 
-const ORIGIN = { user: 'you', 'claude-code': 'Claude Code', 'restore-safety': 'safety copy', import: 'import', studio: 'studio' };
+const ORIGIN = { user: 'you', 'claude-code': 'Claude Code', codex: 'Codex', 'restore-safety': 'safety copy', import: 'import', studio: 'studio' };
 const VERIFY_MEANING = 'Mark that you tried this version and it works';
 
 export function renderVersions(host, app, { viewing } = {}) {
