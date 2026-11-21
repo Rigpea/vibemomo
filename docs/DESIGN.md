@@ -605,4 +605,3 @@ its own.
 the theme changes; Discard, leaving the part or the view puts the kept look back. Apply, Undo and Reset each say so
 in a toast, and Apply's and Reset's toasts offer Undo; Undo also stays in the column after a reload. No transition of
 its own: the page simply becomes the look (controls that already ease their colour do so within the token).
-

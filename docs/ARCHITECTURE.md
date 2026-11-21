@@ -2397,4 +2397,3 @@ board in the data folder with two projects' app boards byte for byte unchanged, 
 read, refusals that write nothing, a lock that refuses nothing; the wiring as source checks) and tests/appearance.test.mjs.
 Seen in an offscreen Electron window with `scripts/ui-check/verify-studio-look.cjs` on a throwaway server on
 2026-11-15, 28 checks at 1280×720 and 1920×1080; `verify-appearance.cjs` holds 43 of 43 with the lock line.
-
