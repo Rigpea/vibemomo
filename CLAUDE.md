@@ -42,8 +42,9 @@ a pid written under WSL means nothing on Windows.
 ## Studio tasks
 
 When the studio is registered as a project of its own, task briefs appear under
-`.studio/tasks/<id>/brief.md` here, and the studio adds a line at the end of this file that
-imports `.studio/BRIEFING.md`. Neither exists before that.
+`.studio/tasks/<id>/brief.md` here, and the studio writes `.studio/BRIEFING.md`, which the
+last line of this file imports. Neither exists before that (`.studio/` is ignored by git), and
+the line is already here so a registered studio leaves this tracked file unchanged.
 Report with `node bin/atelier.mjs task start|note|question|finish <id>`.
 A studio task that changes behavior must: pass `npm run check`, be inspected in
 the browser, and name the check in `task finish --verification`.
@@ -58,3 +59,6 @@ concept image (`docs/design/inspiration/`). Comments and docs still cite them, m
 `docs/ARCHITECTURE.md`, and do not go looking for the files. When you change course, write the
 choice and its reason where the next reader will find it; a decision log of your own would start
 empty.
+
+<!-- Atelier -->
+@.studio/BRIEFING.md
