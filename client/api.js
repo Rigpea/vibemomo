@@ -110,8 +110,8 @@ export const api = {
   runUtility: (task, b) => post(`/api/utility/${enc(task)}`, b),
   cancelUtility: (runId) => post('/api/utility/cancel', { runId }),
   setApiKey: (key) => post('/api/secrets/api-key', { key }),
-  /** The studio's Claude Code sign-in: a token from claude setup-token; an empty string removes it. */
-  setClaudeToken: (token) => post('/api/secrets/claude-token', { token }),
+  removeLegacyClaudeToken: () => post('/api/secrets/claude-token', { token: '' }),
+  accountSignIn: () => get('/api/accounts/sign-in'),
   consoleAuth: (fresh = false) => get(`/api/console/auth${fresh ? '?fresh=1' : ''}`),
   evidence: () => get('/api/evidence/models'),
   settings: () => get('/api/settings'),

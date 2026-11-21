@@ -29,7 +29,7 @@ atelier/                      studio source (this repo; git; tags studio/vX.Y.Z)
   budget.json                 ceilings, reserve, observed balance, pause flag
   usage/ledger.jsonl          one line per API call
   sessions/<id>.json          studio sessions (continuation summaries)
-  secrets.json                { "STUDIO_ANTHROPIC_API_KEY": "...", "CLAUDE_CODE_OAUTH_TOKEN": "...", "CLAUDE_CODE_OAUTH_TOKEN_SAVED_AT": iso }
+  secrets.json                { "STUDIO_ANTHROPIC_API_KEY": "..." } (older installations may have a removable legacy token)
                               never served, never logged (the token: section 7, Sign-in)
 <project>/                    one folder per product, its own git repo (ATELIER_PROJECTS_DIR/<slug>)
   atelier.json                product manifest (COMMITTED): kind, entry, build, tuning, cues
@@ -542,27 +542,12 @@ account it runs on and what it costs; nothing switches backend by itself.
   plan. The child env never contains `STUDIO_ANTHROPIC_API_KEY` or `ANTHROPIC_API_KEY`, so a
   console turn can never be billed to the API by accident. `modelUsage` from the result line is
   stored with the turn as evidence of which model answered.
-- **Sign-in** (decision row 129). The CLI signs in with the first credential it finds; on this machine
-  `CLAUDE_CONFIG_DIR` is set machine-wide, so every claude (terminals, the studio's runs, other programs) shares
-  one saved login in `<config>/.credentials.json`, which has a finite life and is refreshed by whichever process
-  needs it first. On 2026-11-07 a companion turn found it expired and could not refresh it, and the file was left
-  signed out for every claude on the machine. The studio therefore keeps an optional sign-in of its own: a
-  one-year token the person makes with `claude setup-token` in their own terminal and pastes in Settings ›
-  Claude Code sign-in (`POST /api/secrets/claude-token {token}`; an empty token removes it; an `sk-ant-api…`
-  key is 400 `invalid_token`, since the CLI would bill the API with it). It is kept in `secrets.json` with the
-  date it was saved, never returned, and put only into the environment of the studio's own claude runs as
-  `CLAUDE_CODE_OAUTH_TOKEN` (`claudeEnv`), which outranks the saved login; with it goes
-  `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1`, so Claude Code strips credentials from the commands, hooks and MCP servers
-  the session starts. Shells, commands and other programs never get it. `GET /api/console/auth[?fresh=1]` answers
-  `{ cli, loggedIn, authMethod, studioToken: { saved, savedAt, endsAbout }, checkedAt }` from the CLI's own
-  `claude auth status --json` in the runs' environment (it names the kind of sign-in and does not test it; a turn
-  does), cached a minute. A run that fails before any tool call with the CLI's sign-in words (`SIGNED_OUT_RE`) is
-  kept with `signedOut: true` (older turns gain it on read, `upgradeSignedOut`); the transcript draws it as
-  "Claude Code is signed out on this machine" with a link to Settings, and the Companion tab's state reads
-  Signed out. The child env also drops the desktop app's host-session variables (its account and organization ids,
-  OAuth scopes, messaging socket, host and child-session ids, Agent SDK markers), which a studio restarted from a
-  desktop Code session inherits. Not a protection: a session that runs node can still read `secrets.json` from
-  disk, as it can the API key (below).
+- **Subscription sign-in.** Settings → Connected accounts opens a separate, loopback-only confirmation
+  page. A same-origin form starts the installed Claude Code or Codex login from the user's home directory.
+  The CLI owns the provider callback and credential storage. The studio discards login output. The UI
+  checks the CLI's status after sign-in and distinguishes ChatGPT from API-key authentication when Codex
+  identifies it. Older studio tokens are ignored and may be removed in Settings. Local project programs
+  still run with the operating-system permissions of the user who launched the studio.
 - `allowStudioCli` (boolean, default false, claude-code only): when true the argv entries
   `--allowedTools`, `Bash(node:*)`, `Bash(npm run:*)`, `Bash(npm test:*)`, `Bash(git status:*)`,
   `Bash(git diff:*)`, `Bash(git log:*)`, `Bash(git show:*)`, `--disallowedTools`, `PowerShell` are appended (a PowerShell(node:*) rule was still denied in a probe, see docs/evidence/probe-allowed-tools*.json) (spawned as-is, no shell

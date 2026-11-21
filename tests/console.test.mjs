@@ -15,7 +15,7 @@ import { validate } from '../server/api-utility/validate.mjs';
 
 const FAKE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'fake-claude.mjs');
 
-function setup({ env = {}, settings = {}, utility = null, companionContext = null, claudeToken = null, claudeTokenInfo = null } = {}) {
+function setup({ env = {}, settings = {}, utility = null, companionContext = null, claudeTokenInfo = null } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atelier-console-'));
   const studioDir = path.join(root, 'studio');
   const projectDir = path.join(root, 'project');
@@ -37,7 +37,6 @@ function setup({ env = {}, settings = {}, utility = null, companionContext = nul
     emit: (type, payload) => events.push({ type, payload }),
     env: { ...process.env, ATELIER_CLAUDE_BIN: FAKE, ...env },
     companionContext,
-    ...(claudeToken ? { claudeToken } : {}),
     ...(claudeTokenInfo ? { claudeTokenInfo } : {}),
   });
   const waitFor = async (pred, ms = 10000) => {
@@ -584,47 +583,29 @@ test('tool calls carry ms, when in the run they came, for the trajectory; list e
   assert.equal(await asks(), false, 'answered');
 });
 
-test('claudeEnv: the saved token rides only the studio claude runs; the desktop app host-session variables are dropped (decision row 129)', async () => {
-  const { claudeEnv, strippedEnv } = await import('../server/lib/console.mjs');
+test('subscription keys and desktop host-session variables are removed from child environments', async () => {
+  const { strippedEnv } = await import('../server/lib/console.mjs');
   const parent = {
-    PATH: 'p', CLAUDE_CONFIG_DIR: 'C:/cfg', ANTHROPIC_API_KEY: 'k', CLAUDE_CODE_ACCOUNT_UUID: 'a', CLAUDE_CODE_ORGANIZATION_UUID: 'o',
+    PATH: 'p', CLAUDE_CONFIG_DIR: 'C:/cfg', ANTHROPIC_API_KEY: 'k', claude_code_oauth_token: 'legacy', OPENAI_API_KEY: 'unused', CODEX_ACCESS_TOKEN: 'unused', ANTHROPIC_AUTH_TOKEN: 'unused', CLAUDE_CODE_ACCOUNT_UUID: 'a', CLAUDE_CODE_ORGANIZATION_UUID: 'o',
     CLAUDE_CODE_OAUTH_SCOPES: 's', CLAUDE_CODE_MESSAGING_SOCKET: 'm', CLAUDE_CODE_MESSAGING_TOKEN: 't', CLAUDE_CODE_HOST_SESSION_ID: 'h',
     CLAUDE_CODE_CHILD_SESSION: '1', CLAUDE_CODE_DESKTOP_APP_VERSION: '1', CLAUDE_AGENT_SDK_VERSION: '1', USE_LOCAL_OAUTH: '', USE_STAGING_OAUTH: '',
     CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH: '1', CLAUDE_CODE_EXECPATH: 'x', CLAUDE_CODE_GIT_BASH_PATH: 'C:/git/bash.exe', CLAUDE_CODE_USE_BEDROCK: '',
   };
   assert.deepEqual(Object.keys(strippedEnv(parent)).sort(), ['CLAUDE_CODE_GIT_BASH_PATH', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CONFIG_DIR', 'PATH'], 'the person\'s own settings stay');
-  assert.equal(claudeEnv(parent, null).CLAUDE_CODE_OAUTH_TOKEN, undefined, 'no token saved: none added');
-  assert.equal(claudeEnv(parent, null).CLAUDE_CODE_SUBPROCESS_ENV_SCRUB, undefined, 'no token: the session\'s commands keep the person\'s env');
-  assert.equal(claudeEnv(parent, 'tok-123').CLAUDE_CODE_OAUTH_TOKEN, 'tok-123');
-  assert.equal(claudeEnv({ ...parent, CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '0' }, 'tok-123').CLAUDE_CODE_SUBPROCESS_ENV_SCRUB, '1', 'with the token, its commands, hooks and MCP servers never see it');
-  const one = claudeEnv({ ...parent, claude_code_oauth_token: 'old' }, 'tok-123');
-  assert.deepEqual(Object.keys(one).filter((k) => k.toUpperCase() === 'CLAUDE_CODE_OAUTH_TOKEN'), ['CLAUDE_CODE_OAUTH_TOKEN'], 'one spelling only, the saved one');
 });
 
-test('a signed-out run is a signedOut turn; the saved token reaches the claude child; authStatus asks the CLI in that env (decision row 129)', async () => {
-  let token = null;
+test('Claude reports CLI authentication and ignores a studio token from an older installation', async () => {
   const { c, finished } = setup({
-    env: { CLAUDE_CODE_HOST_SESSION_ID: 'host-1', CLAUDE_CODE_OAUTH_TOKEN: '' },
-    claudeToken: async () => token,
-    claudeTokenInfo: async () => (token ? { saved: true, savedAt: '2026-11-07T12:00:00.000Z', endsAbout: '2027-11-07T12:00:00.000Z' } : { saved: false, savedAt: null, endsAbout: null }),
+    env: { CLAUDE_CODE_HOST_SESSION_ID: 'old-host', CLAUDE_CODE_OAUTH_TOKEN: 'legacy-value' },
+    claudeTokenInfo: async () => ({ saved: true }),
   });
-  const s = await c.createSession({ backend: 'claude-code' });
-  let turn = (await finished((await c.send(s.id, { text: 'SIGNED_OUT' })).runId)).payload.turn;
-  assert.equal(turn.signedOut, true);
-  assert.equal(turn.isError, true);
-  assert.match(turn.text, /^Failed to authenticate: OAuth session expired/);
-  let st = await c.authStatus({ fresh: true });
-  assert.deepEqual({ cli: st.cli, loggedIn: st.loggedIn, authMethod: st.authMethod, saved: st.studioToken.saved }, { cli: true, loggedIn: false, authMethod: 'none', saved: false });
-  token = 'sk-ant-oat01-console-test-token-0123';
-  turn = (await finished((await c.send(s.id, { text: 'AUTH?' })).runId)).payload.turn;
-  assert.ok(turn.events.some((e) => e.kind === 'status' && e.summary === 'auth CLAUDE_CODE_OAUTH_TOKEN=present CLAUDE_CODE_HOST_SESSION_ID=absent'), 'the token reached the child, the host session id did not');
-  assert.equal(turn.signedOut, undefined, 'a working run is not signed out');
-  st = await c.authStatus({ fresh: true });
-  assert.deepEqual({ loggedIn: st.loggedIn, authMethod: st.authMethod, saved: st.studioToken.saved }, { loggedIn: true, authMethod: 'oauth_token', saved: true });
-  assert.ok(!JSON.stringify(st).includes('console-test-token'), 'the status never carries the token');
-  token = null;
-  assert.equal((await c.authStatus()).loggedIn, true, 'a minute\'s answer is reused unless fresh');
-  assert.equal((await c.authStatus({ fresh: true })).loggedIn, false);
+  const session = await c.createSession({ backend: 'claude-code' });
+  const turn = (await finished((await c.send(session.id, { text: 'AUTH?' })).runId)).payload.turn;
+  assert.ok(turn.events.some(e => e.summary === 'auth CLAUDE_CODE_OAUTH_TOKEN=absent CLAUDE_CODE_HOST_SESSION_ID=absent'));
+  const status = await c.authStatus({ fresh: true });
+  assert.equal(status.loggedIn, false);
+  assert.equal(status.studioToken.saved, true);
+  assert.ok(!JSON.stringify(status).includes('legacy-value'));
 });
 
 test('upgradeSignedOut: a kept turn whose CLI words say it had no sign-in reads as signed out; other failures do not', async () => {

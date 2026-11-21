@@ -7,8 +7,8 @@ import { addRef, listRefs } from './references.mjs';
 
 export const STUDIO_REFERENCES = [
   { kind: 'link', url: 'https://code.claude.com/docs/en/authentication',
-    useFor: 'the studio\'s Claude Code sign-in: claude setup-token makes a token that lasts one year',
-    tags: ['claude code', 'sign-in'], source: 'server/lib/secrets.mjs (the comment over TOKEN_DAYS); decision row 129' },
+    useFor: 'how to sign in using the official Claude Code CLI',
+    tags: ['claude code', 'sign-in'], source: 'server/lib/account-login.mjs' },
   { kind: 'link', url: 'https://platform.claude.com/docs/en/about-claude/pricing',
     useFor: 'the prices of the bounded API utilities, per million tokens',
     tags: ['api', 'pricing'], source: 'server/api-utility/pricing.mjs (verified 2026-11-03); docs/evidence/VERIFICATION.md' },

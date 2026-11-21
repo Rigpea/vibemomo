@@ -24,11 +24,12 @@ import { buildProject, releaseNotesDraftData } from './lib/build.mjs';
 import { templateDrift, templateDriftDiff } from './lib/template-drift.mjs';
 import { saveRender, listRenders, readRender, MAX_RENDER_BODY } from './lib/audio-render.mjs';
 import { modelEvidence } from './lib/evidence.mjs';
-import { getApiKey, keySource, setApiKey, redact, getClaudeToken, claudeTokenInfo, claudeTokenProblem, setClaudeToken } from './lib/secrets.mjs';
+import { getApiKey, keySource, setApiKey, redact, claudeTokenInfo, removeLegacyToken } from './lib/secrets.mjs';
 import { subscribe, emit, clientCount } from './lib/events.mjs';
 import { checkShow } from './lib/mcp/show.mjs';
 import { createUtility, readApiKey } from './api-utility/index.mjs';
 import { createConsole, CONSOLE_DEFAULTS, CONSOLE_MODELS } from './lib/console.mjs';
+import { createAccountLogin } from './lib/account-login.mjs';
 import { createTerminals } from './lib/terminal.mjs';
 import { runs } from './lib/runs.mjs';
 import { createLive, serveLiveFrame } from './lib/live.mjs';
@@ -99,7 +100,6 @@ const consoleSvc = createConsole({
   projectsDir: PROJECTS_DIR,
   projectFolders: async () => (await loadRegistry()).projects.map((p) => p.path),
   studioProjectId: async () => (await loadRegistry()).projects.find((p) => p.kind === 'studio')?.id || null, // named to companion sessions for their checkpoint command
-  claudeToken: getClaudeToken, // the studio's own Claude Code sign-in, for its claude runs only (decision row 129)
   claudeTokenInfo,
   loadProject: (id) => projects.loadProject(id),
   getSettings: async () => (await loadRegistry()).settings,
@@ -738,16 +738,19 @@ route('POST', '/api/secrets/api-key', async ({ body }) => {
   emit('budget.changed', { keyChanged: true });
   return out;
 });
-// The studio's Claude Code sign-in: a token from claude setup-token, kept server-side; empty removes it.
+// Old clients may still submit this form. Accept only an explicit removal.
 route('POST', '/api/secrets/claude-token', async ({ body }) => {
-  const token = typeof body.token === 'string' ? body.token : '';
-  const problem = claudeTokenProblem(token);
-  if (problem) throw new HttpError(400, 'invalid_token', problem);
-  const saved = await setClaudeToken(token);
+  if (body?.token !== '') throw new HttpError(400, 'invalid_token', 'Open Settings and sign in through Claude Code.');
+  const saved = await removeLegacyToken();
   const status = await consoleSvc.authStatus({ fresh: true });
   emit('console.auth', { saved: saved.saved });
   return { ...saved, status };
 });
+
+// Account approval is on its own loopback origin, outside project previews and the studio API.
+const accountLogin = createAccountLogin({ resolveBinary: consoleSvc.accountBinary });
+route('GET', '/api/accounts/sign-in', async () => ({ origin: await accountLogin.listen() }));
+process.on('exit', () => accountLogin.close());
 
 // ----- console -----
 route('GET', '/api/console/backends', async () => consoleSvc.backends());
@@ -917,9 +920,19 @@ async function serveVendor(res, p) {
 
 const STARTED_AT = nowIso();
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
-  const p = decodeURIComponent(url.pathname);
   try {
+    const host = req.headers.host;
+    const origin = 'http://' + host;
+    if (host !== '127.0.0.1:' + PORT && host !== 'localhost:' + PORT && !(PORT === 80 && ['127.0.0.1', 'localhost'].includes(host))) {
+      throw new HttpError(403, 'local_host_required', 'Open the studio at its local address.');
+    }
+    const url = new URL(req.url, origin);
+    let p;
+    try { p = decodeURIComponent(url.pathname); } catch { throw new HttpError(400, 'invalid_path', 'Invalid request path.'); }
+    if (p.startsWith('/api/') && !['GET', 'HEAD'].includes(req.method) &&
+        ((req.headers.origin !== undefined && req.headers.origin !== origin) || req.headers['sec-fetch-site'] === 'cross-site')) {
+      throw new HttpError(403, 'local_origin_required', 'Open Settings in the local studio.');
+    }
     if (p === '/api/events') return subscribe(res);
     if (p.startsWith('/live/')) {
       const projectId = p.split('/')[2] || '';

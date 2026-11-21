@@ -528,6 +528,14 @@ never moves to the API by itself.
 
 ## Settings
 
+Open **Connected accounts** and choose **Sign in with Claude Code** or **Sign in with ChatGPT**.
+Confirm on the local sign-in page, finish in your provider’s browser window, then return and choose
+**Check accounts**. Claude Code supplies the Companion and workers. ChatGPT supplies the Codex tab.
+Each CLI saves its own credentials. If a browser does not open, run the command shown on the
+confirmation page in your own terminal. An old studio-saved Claude token can be removed here.
+Budget utilities still use their separately configured API key.
+
+
 - **Appearance**: the studio's look for you, on this computer. *Accent* (the colour picker, a hex,
   six presets, or a colour card from the open project's Inspiration board), *Density* (comfortable
   or compact), *Text size* (four steps), *Corners* (sharp, soft or round) and *Motion* (normal or

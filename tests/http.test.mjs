@@ -1687,21 +1687,18 @@ test('a companion session over HTTP: the first message carries the context pack 
   await api('DELETE', `/api/projects/${phoneId}/companion/pins/${pin.data.id}`);
 });
 
-test('the studio Claude Code sign-in: an API key is 400, a token is saved and never returned, auth reads the CLI in the runs\' env, empty removes (decision row 129)', async () => {
-  const bad = await api('POST', '/api/secrets/claude-token', { token: 'sk-ant-api03-not-this-one-please' });
-  assert.equal(bad.status, 400);
-  assert.equal(bad.data.error.code, 'invalid_token');
-  const before = await api('GET', '/api/console/auth?fresh=1');
-  assert.equal(before.status, 200);
-  assert.deepEqual({ saved: before.data.studioToken.saved, loggedIn: before.data.loggedIn, authMethod: before.data.authMethod }, { saved: false, loggedIn: false, authMethod: 'none' });
-  const ok = await api('POST', '/api/secrets/claude-token', { token: 'sk-ant-oat01-http-test-token-0123456789' });
-  assert.equal(ok.status, 200);
-  assert.equal(ok.data.saved, true);
-  assert.match(ok.data.savedAt, /^\d{4}-\d{2}-\d{2}T/);
-  assert.deepEqual({ loggedIn: ok.data.status.loggedIn, authMethod: ok.data.status.authMethod }, { loggedIn: true, authMethod: 'oauth_token' });
-  for (const r of [ok, await api('GET', '/api/console/auth'), await api('GET', '/api/state'), await api('GET', '/api/settings')]) assert.ok(!JSON.stringify(r.data).includes('http-test-token'), 'the token is never returned');
-  const off = await api('POST', '/api/secrets/claude-token', { token: '' });
-  assert.equal(off.status, 200);
-  assert.equal(off.data.saved, false);
-  assert.equal(off.data.status.loggedIn, false);
+test('Settings only reports CLI status and accepts explicit legacy-token removal', async () => {
+  for (const body of [{ token: 'test-subscription-value' }, {}, { token: null }]) {
+    const result = await api('POST', '/api/secrets/claude-token', body);
+    assert.equal(result.status, 400);
+    assert.ok(!JSON.stringify(result.data).includes('test-subscription-value'));
+  }
+  const status = await api('GET', '/api/console/auth?fresh=1');
+  assert.equal(status.data.loggedIn, false);
+  assert.equal((await api('POST', '/api/secrets/claude-token', { token: '' })).data.saved, false);
+  const blocked = await fetch(BASE + '/api/secrets/claude-token', { method: 'POST', headers: { origin: 'https://example.org' } });
+  assert.equal(blocked.status, 403);
+  const helper = await api('GET', '/api/accounts/sign-in');
+  assert.match(helper.data.origin, /^http:\/\/127\.0\.0\.1:\d+$/);
+  assert.notEqual(helper.data.origin, BASE);
 });

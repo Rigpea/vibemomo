@@ -88,7 +88,7 @@ state as a chip; the edit form in a dialog.
 Budget: the three numbers that matter at the top (spent this cycle, live ceiling, observed
 balance and when it was observed), then the ledger as a table.
 
-Settings: sections with overlines: Appearance · Layout · Claude Code sign-in · API key · Console ·
+Settings: sections with overlines: Connected accounts · Appearance · Layout · API key · Console ·
 Devices · This machine · Data locations; each a short form. (Appearance, since 2026-11-13, is the person's
 own look, section 12; the layout preferences it used to hold are Layout.)
 

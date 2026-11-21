@@ -11,10 +11,10 @@ let v = null;
 const sec = (title, id) => el('section.set-sec', { id, 'aria-label': title });
 
 export function mount(host, app) {
-  v = { app, undo: [], auth: null, boxes: { look: sec('Appearance', 'appearance'), layout: sec('Layout', 'layout-settings'), login: sec('Claude Code sign-in', 'claude-login'), key: sec('API key'), console: sec('Console', 'console-settings'), devices: sec('Devices', 'devices-settings'), machine: sec('This machine'), info: sec('Data locations') }, offs: [] };
+  v = { app, undo: [], auth: null, boxes: { look: sec('Appearance', 'appearance'), layout: sec('Layout', 'layout-settings'), login: sec('Connected accounts', 'claude-login'), key: sec('API key'), console: sec('Console', 'console-settings'), devices: sec('Devices', 'devices-settings'), machine: sec('This machine'), info: sec('Data locations') }, offs: [] };
   clear(host, el('div.page', el('div.page-inner.narrow',
     el('div.page-head', el('h1', 'Settings')),
-    v.boxes.look, v.boxes.layout, v.boxes.login, v.boxes.key, v.boxes.console, v.boxes.devices, v.boxes.machine, v.boxes.info)));
+    v.boxes.login, v.boxes.look, v.boxes.layout, v.boxes.key, v.boxes.console, v.boxes.devices, v.boxes.machine, v.boxes.info)));
   const lookBody = el('div');
   clear(v.boxes.look, over('Appearance'), lookBody);
   v.look = mountAppearance(lookBody, app); // built once and updated in place: it listens for itself
@@ -24,6 +24,9 @@ export function mount(host, app) {
     if (!v.devicesDirty) renderDevices();
   }), app.on('layout', renderLayout), app.on('bundle', renderLayout));
   renderInfo(); renderKey(); renderLayout(); renderConsole(); renderDevices(); renderMachine(); renderLogin(); loadLogin(false);
+  const refreshAccounts = () => loadLogin(true);
+  window.addEventListener('focus', refreshAccounts);
+  v.offs.push(() => window.removeEventListener('focus', refreshAccounts));
 }
 
 export function unmount() { v?.look?.unmount(); v?.offs.forEach((off) => off()); v = null; }
@@ -80,62 +83,53 @@ async function undo() {
   } catch (err) { v.undo.push(last); toastError(err, 'Undo'); }
 }
 
-// ---------- Claude Code sign-in (decision row 129) ----------
-const day = (iso) => (iso ? new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : null);
-const METHOD_WORDS = { oauth_token: 'a token in its environment', none: 'none' };
-
+// Subscription credentials are managed by the official CLIs. Only status appears in Settings.
 async function loadLogin(fresh) {
-  try { const a = await v.app.api.consoleAuth(fresh); if (v) { v.auth = a; v.authError = null; } } catch (err) { if (v) v.authError = err; }
+  const me = v;
+  if (!me) return;
+  const request = me.accountRequest = (me.accountRequest || 0) + 1;
+  const results = await Promise.allSettled([me.app.api.consoleAuth(fresh), me.app.api.codexStatus(fresh), me.app.api.accountSignIn()]);
+  if (v !== me || request !== me.accountRequest) return;
+  [me.auth, me.codexAuth, me.signIn] = results.map(r => r.status === 'fulfilled' ? r.value : null);
+  me.accountsChecked = true;
   renderLogin();
 }
 
-/** What signs the studio's Claude Code runs in, in words: the saved token, the machine's own sign-in, or nothing. */
-function loginLine(a) {
-  if (!a) return 'Checking…';
-  if (a.studioToken?.saved) return `The studio's Claude Code runs use the sign-in you saved here${a.studioToken.savedAt ? ` on ${day(a.studioToken.savedAt)}` : ''}${a.studioToken.endsAbout ? `; it lasts until about ${day(a.studioToken.endsAbout)}` : ''}.`;
-  if (!a.cli) return 'The claude CLI was not found, so nothing can sign in yet (Console, below).';
-  if (a.loggedIn) return `The studio's Claude Code runs use this machine's own sign-in (${METHOD_WORDS[a.authMethod] || a.authMethod || 'unknown kind'}). Every claude on this machine shares it, so it can expire or be refreshed away by another program.`;
-  return 'Claude Code is signed out on this machine, so the companion and task sessions cannot run until you sign in.';
+function accountRow(provider, name, status, installUrl, command) {
+  let label = 'Checking account…';
+  if (v.accountsChecked) {
+    if (!status) label = 'Status unavailable';
+    else if (!status.cli) label = 'CLI not installed or not found';
+    else if (status.loggedIn === false) label = 'Signed out';
+    else if (status.loggedIn !== true) label = 'Sign-in could not be verified';
+    else if (provider === 'codex') label = { chatgpt: 'Signed in with ChatGPT', 'api-key': 'Codex is using a saved API key' }[status.login] || 'Signed in · account type unknown';
+    else label = { 'claude.ai': 'Signed in with Claude', oauth_token: 'Signed in with OAuth', api_key: 'Claude Code is using an API key', apiKey: 'Claude Code is using an API key', console: 'Signed in to Claude Console' }[status.authMethod] || 'Signed in · account type unconfirmed';
+  }
+  const title = provider === 'codex' ? 'ChatGPT' : 'Claude Code';
+  const link = (text, href) => el('a.btn', { href, target: '_blank', rel: 'noopener noreferrer' }, text);
+  return el('div', el('h3', name), el('p.login-line', { 'aria-live': 'polite' }, label),
+    status?.cli === false ? link('Install ' + (provider === 'codex' ? 'Codex CLI' : 'Claude Code'), installUrl) :
+      v.signIn?.origin ? link('Sign in with ' + title, v.signIn.origin + '/' + provider) : null,
+    v.accountsChecked && !v.signIn && status?.cli !== false ? el('p.meta', 'In your own terminal, run ', el('code', command), ' and then check accounts.') : null);
 }
 
 function renderLogin() {
   if (!v) return;
-  const a = v.auth;
-  const token = input({ type: 'password', autocomplete: 'off', spellcheck: false, placeholder: 'the token claude setup-token prints', 'aria-label': 'Claude Code token' });
-  const copy = button('Copy', { small: true, variant: 'quiet', title: 'Copy the command', onclick: async () => {
-    try { await navigator.clipboard.writeText('claude setup-token'); toast('Copied: claude setup-token', { tone: 'ok', timeout: 2000 }); } catch (err) { toastError(err, 'Copy'); }
-  } });
-  clear(v.boxes.login,
-    over('Claude Code sign-in'),
-    el('p', { class: a && !a.studioToken?.saved && a.loggedIn === false ? 'login-line danger' : 'login-line' }, v.authError ? `The sign-in could not be checked: ${v.authError.message}` : loginLine(a)),
-    el('ol.login-steps',
-      el('li', 'In your own terminal (PowerShell or Windows Terminal, not the studio\'s), run ', el('code', 'claude setup-token'), ' ', copy, ' and approve in the browser. It makes a sign-in for your Claude plan that lasts a year.'),
-      el('li', 'Paste the one line it prints here and save. It stays on this computer in ~/.atelier/secrets.json, is never shown again, and only the studio\'s own Claude Code runs get it; your terminals and other programs keep their own sign-in.')),
-    el('form', { onsubmit: async (e) => {
-      e.preventDefault();
-      if (!token.value.trim()) return token.focus();
-      try {
-        const out = await v.app.api.setClaudeToken(token.value.trim());
-        token.value = '';
-        if (v) { v.auth = out.status; v.authError = null; }
-        toast('Claude Code sign-in saved for the studio', { tone: 'ok' });
-        renderLogin();
-      } catch (err) { toastError(err, 'Sign-in'); }
-    } }, field('Token', token),
-    el('div.row', button('Save sign-in', { type: 'submit' }),
-      a?.studioToken?.saved ? button('Remove saved sign-in', { variant: 'danger', onclick: removeLogin }) : null,
-      button('Check again', { variant: 'quiet', onclick: () => { if (v) { v.auth = null; renderLogin(); } loadLogin(true); } }))),
-    a?.checkedAt ? el('p.meta', `Checked ${ago(a.checkedAt)}. The check reads what kind of sign-in the CLI has; the next message shows whether it works.`) : null);
+  clear(v.boxes.login, over('Connected accounts'),
+    el('p.meta', 'Use Claude Code for the Companion and workers, or ChatGPT for the Codex tab. Finish sign-in with the provider in your browser.'),
+    accountRow('claude', 'Claude Code', v.auth, 'https://code.claude.com/docs/en/quickstart', 'claude auth login --claudeai'),
+    accountRow('codex', 'ChatGPT via Codex', v.codexAuth, 'https://developers.openai.com/codex/cli/', 'codex login'),
+    el('div.row', button('Check accounts', { variant: 'quiet', onclick: () => loadLogin(true) })),
+    v.auth?.studioToken?.saved ? el('div.note', el('p', 'An older version saved a Claude token here. The studio now uses the CLI login.'),
+      button('Remove old token', { variant: 'danger', onclick: removeLogin })) : null);
 }
 
 async function removeLogin() {
-  const ok = await confirmDialog({
-    title: 'Remove the saved Claude Code sign-in?',
-    message: 'The token is deleted from ~/.atelier/secrets.json. The studio\'s Claude Code runs then use this machine\'s own sign-in, if it has one. The token itself stays valid until it ends; claude.ai settings can revoke it.',
-    confirm: 'Remove sign-in', variant: 'danger', cancel: 'Keep it',
-  });
-  if (!ok || !v) return;
-  try { const out = await v.app.api.setClaudeToken(''); if (v) v.auth = out.status; toast('Saved sign-in removed', { tone: 'ok' }); renderLogin(); } catch (err) { toastError(err); }
+  const me = v;
+  const ok = await confirmDialog({ title: 'Remove old Claude token?', message: 'Delete the old token from this studio’s storage. To revoke the token itself, use your Claude account settings.', confirm: 'Remove token', variant: 'danger' });
+  if (!ok || v !== me) return;
+  try { await me.app.api.removeLegacyClaudeToken(); await loadLogin(true); toast('Old token removed', { tone: 'ok' }); }
+  catch (err) { toastError(err, 'Remove token'); }
 }
 
 // ---------- API key + utility model ----------

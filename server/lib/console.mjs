@@ -15,7 +15,7 @@ import { asksQuestion } from '../../client/components/companion-words.js';
 import { sessionName, sessionEnd, toolWords } from './runs.mjs';
 
 import { CONSOLE_MODELS } from './models.mjs';
-import { createCodexRunner, codexChoices, codexHome, checkCodexChoice, effortsOf, CODEX_DEFAULT_SANDBOX, CODEX_NO_CLI, CODEX_ROLE, CODEX_TOOLS_SENTENCE, codexSandboxSentence, CODEX_WORKER_ROLE, CODEX_WORKER_SANDBOX, CODEX_WORKER_SANDBOX_SENTENCE } from './codex.mjs';
+import { CODEX_STRIPPED_ENV, createCodexRunner, codexChoices, codexHome, checkCodexChoice, effortsOf, CODEX_DEFAULT_SANDBOX, CODEX_NO_CLI, CODEX_ROLE, CODEX_TOOLS_SENTENCE, codexSandboxSentence, CODEX_WORKER_ROLE, CODEX_WORKER_SANDBOX, CODEX_WORKER_SANDBOX_SENTENCE } from './codex.mjs';
 export { CONSOLE_MODELS }; // the list lives in models.mjs, where projects.mjs can read it without an import cycle
 /** The CLI's --effort levels (claude 2.1.316: low, medium, high, xhigh, max); null leaves the CLI's default. */
 export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
@@ -94,7 +94,7 @@ export function claudeArgs(rec, { studioDir, studioOrigin = DEFAULT_STUDIO_ORIGI
   for (const d of dirs) args.push('--add-dir', d);
   return args;
 }
-export const STRIPPED_ENV = ['STUDIO_ANTHROPIC_API_KEY', 'ANTHROPIC_API_KEY'];
+export const STRIPPED_ENV = ['STUDIO_ANTHROPIC_API_KEY', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'CLAUDE_CODE_OAUTH_REFRESH_TOKEN', ...CODEX_STRIPPED_ENV];
 // Host Claude Code session markers: the studio may itself be started from inside a Claude Code
 // session, and a child `claude` must not think it is nested in it. That includes the desktop app's host
 // session (its account and organization ids, OAuth scopes, messaging socket, host and child-session ids,
@@ -106,20 +106,6 @@ export const SIGNED_OUT_RE = /Failed to authenticate|OAuth (session|token)[^\n]{
 const MAX_TEXT = 20000;
 const MAX_EVENTS = 200;
 const STDERR_TAIL = 2000;
-
-/** The env of the studio's own claude runs: strippedEnv, plus the studio's saved Claude Code token when there is
- *  one (CLAUDE_CODE_OAUTH_TOKEN outranks the machine's saved login; decision row 129). Shells and commands never
- *  get the token, and with it Claude Code is told to scrub credentials from the commands, hooks and MCP servers
- *  it starts (CLAUDE_CODE_SUBPROCESS_ENV_SCRUB), so a session's env or echo cannot print it into a transcript. */
-export function claudeEnv(env, token = null) {
-  const out = strippedEnv(env);
-  if (token) {
-    for (const k of Object.keys(out)) if (['CLAUDE_CODE_OAUTH_TOKEN', 'CLAUDE_CODE_SUBPROCESS_ENV_SCRUB'].includes(k.toUpperCase())) delete out[k];
-    out.CLAUDE_CODE_OAUTH_TOKEN = token;
-    out.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB = '1';
-  }
-  return out;
-}
 
 /** Copy of env without the API keys (case-insensitive, since Windows env names are). */
 export function strippedEnv(env) {
@@ -211,7 +197,7 @@ function upgradeRefusal(t) {
   return { ...rest, refused: m[1], error: refusalText(m[1], m[2]) };
 }
 
-export function createConsole({ dataDir, studioDir, studioOrigin = DEFAULT_STUDIO_ORIGIN, projectsDir = null, projectFolders = async () => [], studioProjectId = async () => null, claudeToken = async () => null, claudeTokenInfo = async () => ({ saved: false, savedAt: null, endsAbout: null }), loadProject, getSettings, utility, emit, env = process.env, companionContext = null, runs: registry = null, onTurnEnd = null }) {
+export function createConsole({ dataDir, studioDir, studioOrigin = DEFAULT_STUDIO_ORIGIN, projectsDir = null, projectFolders = async () => [], studioProjectId = async () => null, claudeTokenInfo = async () => ({ saved: false, savedAt: null, endsAbout: null }), loadProject, getSettings, utility, emit, env = process.env, companionContext = null, runs: registry = null, onTurnEnd = null }) {
   if (!dataDir || !studioDir) throw new Error('createConsole: dataDir and studioDir are required');
   const dir = path.join(dataDir, 'console');
   const runs = new Map(); // sessionId -> { runId, child?, cancelled, timedOut, timer }
@@ -234,14 +220,14 @@ export function createConsole({ dataDir, studioDir, studioOrigin = DEFAULT_STUDI
     dirs.push(path.join(os.homedir(), '.local', 'bin'));
     for (const d of dirs) for (const n of names) {
       const p = path.join(d.replace(/^"|"$/g, ''), n);
-      if (isFile(p)) return p;
+      if (path.isAbsolute(p) && isFile(p)) return p;
     }
     return null;
   }
-  async function resolveClaude() {
+  async function resolveClaude({ machineOnly = false } = {}) {
     const fromEnv = env.ATELIER_CLAUDE_BIN;
     if (fromEnv) return isFile(fromEnv) ? fromEnv : null;
-    const configured = (await settings()).claudePath;
+    const configured = !machineOnly && (await settings()).claudePath;
     if (configured) return isFile(configured) ? configured : null;
     return searchPath(process.platform === 'win32' ? ['claude.exe', 'claude.cmd', 'claude'] : ['claude']);
   }
@@ -277,14 +263,13 @@ export function createConsole({ dataDir, studioDir, studioOrigin = DEFAULT_STUDI
   async function authStatus({ fresh = false } = {}) {
     if (!fresh && authCache && Date.now() - authCache.at < 60000) return authCache.value;
     const bin = await resolveClaude();
-    const token = await claudeToken().catch(() => null);
     const studioToken = await claudeTokenInfo().catch(() => ({ saved: false, savedAt: null, endsAbout: null }));
     let cli = null;
     if (bin) {
       const [cmd, lead, shell] = launcher(bin);
       cli = await new Promise((resolve) => {
-        execFile(cmd, [...lead, 'auth', 'status', '--json'], { timeout: 15000, windowsHide: true, shell, env: claudeEnv(env, token) }, (err, stdout) => {
-          try { const j = JSON.parse(String(stdout || '')); resolve({ loggedIn: j.loggedIn === true, authMethod: typeof j.authMethod === 'string' ? j.authMethod.slice(0, 40) : null }); } catch { resolve(null); }
+        execFile(cmd, [...lead, 'auth', 'status', '--json'], { timeout: 15000, windowsHide: true, shell, env: strippedEnv(env) }, (err, stdout) => {
+          try { const j = JSON.parse(String(stdout || '')); resolve({ loggedIn: j.loggedIn === true, authMethod: ['claude.ai', 'oauth_token', 'api_key', 'apiKey', 'console', 'none'].includes(j.authMethod) ? j.authMethod : null }); } catch { resolve(null); }
         });
       });
     }
@@ -551,8 +536,7 @@ export function createConsole({ dataDir, studioDir, studioOrigin = DEFAULT_STUDI
     const [cmd, lead, shell] = launcher(bin);
     const turn = { role: 'assistant', text: '', at: nowIso(), backend: 'claude-code', events: [] };
     if (pack) turn.contextUsed = CONTEXT_PACK_LABEL;
-    const token = await claudeToken().catch(() => null); // the studio's own sign-in, if the person saved one
-    const child = spawn(cmd, [...lead, ...args], { cwd: rec.cwd, env: claudeEnv(env, token), windowsHide: true, shell, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(cmd, [...lead, ...args], { cwd: rec.cwd, env: strippedEnv(env), windowsHide: true, shell, stdio: ['pipe', 'pipe', 'pipe'] });
     const chunk = (c) => send('console.chunk', { sessionId: rec.id, runId: run.runId, ...c });
     const status = (t) => { pushEvent(turn, { kind: 'status', name: 'status', summary: t.slice(0, 300) }); chunk({ kind: 'status', text: t }); };
     let resultText = '';
@@ -800,5 +784,12 @@ export function createConsole({ dataDir, studioDir, studioOrigin = DEFAULT_STUDI
   /** Whether a turn of this session runs in this process now (the worker queue's restart check). */
   const isRunning = (id) => runs.has(id);
 
-  return { backends, authStatus, codexStatus: (opts) => codex.status(opts), codexReady: () => codex.ready(), listSessions, sessionRecords, createSession, getSession, patchSession, deleteSession, send: sendMessage, cancel, isRunning };
+  // Login must use the same CLI as runs. A path entered through the web UI alone cannot select the login executable.
+  async function accountBinary(provider) {
+    const resolve = provider === 'claude' ? resolveClaude : codex.resolve;
+    const [machine, configured] = await Promise.all([resolve({ machineOnly: true }), resolve()]);
+    return machine && path.isAbsolute(machine) && machine === configured ? machine : null;
+  }
+
+  return { backends, authStatus, accountBinary, codexStatus: (opts) => codex.status(opts), codexReady: () => codex.ready(), listSessions, sessionRecords, createSession, getSession, patchSession, deleteSession, send: sendMessage, cancel, isRunning };
 }

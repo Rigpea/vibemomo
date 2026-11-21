@@ -177,7 +177,7 @@ export function renderTurn(t, s) {
 export function signedOutNote(t) {
   return el('div.note.danger.signed-out', { role: 'alert' },
     el('p', 'Claude Code is signed out on this machine, so this message was not run.'),
-    el('p', 'Save a sign-in that lasts a year in ', el('a', { href: '#/settings' }, 'Settings › Claude Code sign-in'), ', then send the message again.'),
+    el('p', 'Sign in through ', el('a', { href: '#/settings' }, 'Settings › Connected accounts'), ', then send the message again.'),
     t.text ? el('p.meta', `Claude Code said: ${String(t.text).split('\n')[0].slice(0, 200)}`) : null);
 }
 

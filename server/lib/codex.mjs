@@ -334,10 +334,10 @@ export function createCodexRunner({ env, settings, searchPath, launcher, version
 
   const isFile = async (p) => { try { return (await fsp.stat(p)).isFile(); } catch { return false; } };
   /** The binary, found the way the console finds claude: ATELIER_CODEX_BIN, Settings › Console, else PATH. */
-  async function resolved() {
+  async function resolved({ machineOnly = false } = {}) {
     const fromEnv = env.ATELIER_CODEX_BIN;
     if (fromEnv) return (await isFile(fromEnv)) ? fromEnv : null;
-    const configured = (await settings()).codexPath;
+    const configured = !machineOnly && (await settings()).codexPath;
     if (configured) return (await isFile(configured)) ? configured : null;
     const found = searchPath(process.platform === 'win32' ? ['codex.exe', 'codex.cmd', 'codex'] : ['codex']);
     if (found) return found;

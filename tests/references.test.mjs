@@ -286,7 +286,7 @@ test('the studio\'s own seeds are taken from this repository: each names its sou
   for (const seed of STUDIO_REFERENCES) assert.ok(seed.source && seed.useFor && seed.tags.length, `${seed.title || seed.url} says where it came from and what it is for`);
   const links = STUDIO_REFERENCES.filter((s) => s.kind === 'link').map((s) => s.url);
   assert.deepEqual(links, ['https://code.claude.com/docs/en/authentication', 'https://platform.claude.com/docs/en/about-claude/pricing']);
-  assert.ok((await src('server/lib/secrets.mjs')).includes('code.claude.com/docs/en/authentication'), 'the sign-in address is the one the source names');
+  assert.ok((await src('server/lib/account-login.mjs')).includes('code.claude.com/docs/en/authentication'), 'the sign-in address is the one the source names');
   assert.ok((await src('server/api-utility/pricing.mjs')).includes('platform.claude.com/docs/en/about-claude/pricing'), 'and the pricing address');
   const queue = STUDIO_REFERENCES.find((s) => s.kind === 'snippet');
   for (const file of ['server/lib/rules.mjs', 'server/lib/references.mjs']) assert.ok((await src(file)).replace(/\r\n/g, '\n').includes(queue.text.split('\n').slice(1).join('\n')), `the snippet is the code of ${file}`);
