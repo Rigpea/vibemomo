@@ -215,7 +215,7 @@ route('GET', '/api/state', async () => {
   const reg = await loadRegistry();
   const utilityStatus = await utility.status();
   return {
-    studio: { name: 'Atelier', version: pkg.version, gitSha: studioGitSha, dir: STUDIO_DIR, dataDir: DATA_DIR, projectsDir: PROJECTS_DIR, port: PORT, node: process.version, platform: process.platform, startedAt: STARTED_AT },
+    studio: { name: 'vibeMomo', version: pkg.version, gitSha: studioGitSha, dir: STUDIO_DIR, dataDir: DATA_DIR, projectsDir: PROJECTS_DIR, port: PORT, node: process.version, platform: process.platform, startedAt: STARTED_AT },
     projects: reg.projects,
     activeProjectId: reg.activeProjectId,
     settings: withConsoleDefaults(reg.settings),

@@ -71,5 +71,5 @@ export function runsToggle(entry) {
 export function statusWords({ working = [], shells = 0, version = null } = {}) {
   const names = working.map((r) => r.name).filter(Boolean);
   const left = names.length ? `${names.length} working now: ${names.join(', ')}` : shells ? `${shells} shell${shells === 1 ? '' : 's'} open, nothing working` : 'Nothing runs now';
-  return { left, right: version ? `Atelier ${version}` : 'Atelier' };
+  return { left, right: version ? `vibeMomo ${version}` : 'vibeMomo' };
 }

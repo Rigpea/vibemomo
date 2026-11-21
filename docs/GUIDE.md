@@ -1,6 +1,6 @@
-# Using Atelier
+# Using vibeMomo
 
-Atelier is your studio for making apps, sites, games and audio together with Claude. You
+vibeMomo is your studio for making apps, sites, games and audio together with Claude. You
 shape the result; Claude does the routine engineering; every change is a real file in a real
 git repository that you can try, compare, keep or throw away.
 
@@ -21,7 +21,7 @@ Everything else in the studio exists to make one of these steps easier.
 - **Left: Projects.** One line per product. Click to switch. "New project" starts from a
   template (a one-room game, a notes app, Sound Sketch: four short sound cues to play, tune and render) in its own folder with its own history, or imports
   a folder you already have (a `CLAUDE.md` and a `.studio` folder are added to it). The
-  studio itself is listed too, as "Atelier (studio)": you improve the studio through the
+  studio itself is listed too, as "vibeMomo (studio)": you improve the studio through the
   same loop as any product.
 - **Top: eight sections**, also on keys 1–8: Workbench · Learning · Inspiration · Claude Code · Tasks · Memory ·
   Budget · Settings. Learning shows the lessons the Companion makes when you ask it to teach you

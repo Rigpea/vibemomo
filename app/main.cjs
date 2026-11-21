@@ -12,6 +12,13 @@ const fs = require('node:fs');
 const { spawn, spawnSync, execFileSync } = require('node:child_process');
 
 const ROOT = path.resolve(__dirname, '..');
+// The name on screen. The storage identity below stays the old one, so a renamed app keeps its window state.
+const PRODUCT = 'vibeMomo';
+// Electron keeps the studio page's localStorage, the single-instance lock and the packaged log under userData, named
+// after the app: "atelier" from package.json when run from source, and possibly the build's productName in a packaged
+// exe. Pinned to appData/atelier (the folder every earlier version used; Windows folder names ignore case), so the
+// visible rename to vibeMomo moves nothing. Set before the app is ready, as Electron requires.
+app.setPath('userData', path.join(app.getPath('appData'), 'atelier'));
 const PKG = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 const PORT = Number(process.env.ATELIER_PORT || 4747);
 const ORIGIN = `http://127.0.0.1:${PORT}`;
@@ -149,7 +156,7 @@ function dropPidFile(pid) {
 
 function errorPage(title, body) {
   const esc = (s) => String(s).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
-  const html = `<!doctype html><meta charset="utf-8"><title>Atelier</title>
+  const html = `<!doctype html><meta charset="utf-8"><title>${PRODUCT}</title>
 <style>body{background:#111317;color:#e8e4da;font:15px/1.55 system-ui,sans-serif;margin:0;display:grid;place-items:center;min-height:100vh}
 main{max-width:620px;padding:32px}h1{font-size:20px;margin:0 0 12px}code{background:#1d2027;padding:2px 6px;border-radius:4px}p{color:#bdb8ad}</style>
 <main><h1>${esc(title)}</h1>${body}</main>`;
@@ -157,9 +164,9 @@ main{max-width:620px;padding:32px}h1{font-size:20px;margin:0 0 12px}code{backgro
 }
 
 function nodeRequiredPage(reason) {
-  return errorPage('Atelier needs Node.js 22 or newer', `
+  return errorPage(`${PRODUCT} needs Node.js 22 or newer`, `
 <p>The studio's companion runs with the Node.js installed on this computer, and it could not be started: ${String(reason).replace(/[&<>]/g, '')}.</p>
-<p>Install the current LTS from <code>https://nodejs.org</code> (or <code>winget install OpenJS.NodeJS.LTS</code>), make sure <code>node --version</code> prints v22 or newer in a new terminal, then start Atelier again.</p>
+<p>Install the current LTS from <code>https://nodejs.org</code> (or <code>winget install OpenJS.NodeJS.LTS</code>), make sure <code>node --version</code> prints v22 or newer in a new terminal, then start ${PRODUCT} again.</p>
 <p>To use a specific Node, set <code>ATELIER_NODE</code> to its full path.</p>`);
 }
 
@@ -170,7 +177,7 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 680,
     backgroundColor: '#111317',
-    title: 'Atelier',
+    title: PRODUCT,
     icon: path.join(__dirname, 'icon.png'),
     autoHideMenuBar: true,
     webPreferences: {
@@ -180,7 +187,7 @@ function createWindow() {
       nodeIntegration: false,
     },
   });
-  // The page sets its own <title>; the window stays "Atelier".
+  // The page sets its own <title>; the window keeps the product name.
   win.on('page-title-updated', (e) => e.preventDefault());
   const isOurs = (url) => { try { return new URL(url).origin === ORIGIN; } catch { return false; } };
   const external = (url) => { if (/^https?:\/\//i.test(url)) shell.openExternal(url); };
@@ -211,7 +218,7 @@ function showWindow() {
 }
 
 function buildTrayMenu() {
-  const items = [{ label: 'Open Atelier', click: showWindow }];
+  const items = [{ label: `Open ${PRODUCT}`, click: showWindow }];
   if (companion) items.push({ label: 'Restart companion', click: restartCompanion });
   // The studio's own restart (POST /api/studio/restart): works for a server this app did not start too.
   else items.push({ label: 'Restart studio', click: restartStudio });
@@ -223,7 +230,7 @@ function buildTrayMenu() {
 
 function createTray() {
   tray = new Tray(nativeImage.createFromPath(path.join(__dirname, 'tray.png')));
-  tray.setToolTip(`Atelier (${ORIGIN})`);
+  tray.setToolTip(`${PRODUCT} (${ORIGIN})`);
   tray.on('click', showWindow);
   buildTrayMenu();
 }
@@ -342,7 +349,7 @@ if (!SCREENSHOT && !app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(async () => {
-    log(`Atelier desktop ${PKG.version} (Electron ${process.versions.electron}) on ${ORIGIN}${SCREENSHOT ? `, screenshot ${SCREENSHOT}` : ''}`);
+    log(`${PRODUCT} desktop ${PKG.version} (Electron ${process.versions.electron}) on ${ORIGIN}${SCREENSHOT ? `, screenshot ${SCREENSHOT}` : ''}`);
     createTray();
     createWindow();
     if (SCREENSHOT) win.webContents.once('did-finish-load', () => capture(SCREENSHOT));
@@ -361,7 +368,7 @@ if (!SCREENSHOT && !app.requestSingleInstanceLock()) {
     if (win) await win.loadURL(target).catch((err) => log(`load failed: ${err.message}`));
   }).catch((err) => {
     log(`startup failed: ${err.stack || err.message}`);
-    dialog.showErrorBox('Atelier', String(err.message || err));
+    dialog.showErrorBox(PRODUCT, String(err.message || err));
     app.quit();
   });
 }

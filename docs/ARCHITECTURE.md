@@ -698,9 +698,11 @@ not a failure) and removes the pid file it configured (`ATELIER_PID_FILE` or `.l
 resolved against the repo root) if that file names the stopped pid. The server exposes `GET /api/machine` (CPU model and cores, memory, arch, OS, GPU
 names via `Get-CimInstance Win32_VideoController` on Windows, Node version) in both modes;
 Settings shows it as "This machine". Scripts: `npm run app` (dev), `npm run app:build`
-(`electron-builder`, portable Windows exe in `dist-app/`), `npm run app:shortcut` (writes `Desktop\Atelier.lnk` with
+(`electron-builder`, portable Windows exe in `dist-app/`), `npm run app:shortcut` (writes `Desktop\vibeMomo.lnk` with
 target `node_modules/electron/dist/electron.exe <repo>` and icon `app/icon.ico` through PowerShell's WScript.Shell, reads
-it back and names the node the system PATH holds; `--remove` deletes it; decision row 64). Browser mode (`npm start`) is
+it back and names the node the system PATH holds; `--remove` deletes it; an `Atelier.lnk` from before the visible rename is removed only when its target and argument
+are this folder's; decision row 64). The window, tray, error pages and exe say vibeMomo, while `app/main.cjs` pins
+Electron's userData to `appData/atelier`, so the rename leaves the page's localStorage and the instance lock where they were. Browser mode (`npm start`) is
 unchanged. Dependencies (decision rows 12–14): `node-pty`, `@xterm/xterm`, `@xterm/addon-fit`
 (runtime), `electron`, `electron-builder` (dev).
 

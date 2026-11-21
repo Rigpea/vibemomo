@@ -13,6 +13,25 @@ docs/evidence/model-participation.json
 # Project briefs, personal studio data, and local editor/OS files
 .studio/
 .atelier/
+# Product folders kept inside a studio checkout (for example ATELIER_PROJECTS_DIR=./projects): each is its own
+# git repo with its own history, never part of the studio's. Anchored to the top, so a source folder of the same
+# name deeper down (templates/, workbenches/, tests/fixtures/) still tracks.
+/projects/
+/products/
+/workspace/
+/workspaces/
+/Atelier projects/
+# The studio data folder's files, should ATELIER_DATA_DIR point at this checkout or a copy land here: the project
+# list with every folder path, sign-in secrets, memory, usage and consents. ~/.atelier is the default and is outside.
+/registry*.json
+/secrets*.json
+/live-consent.json
+/workers.json
+/resources.json
+/memory/
+/usage/
+# An ignore rule does not untrack a file git already tracks: such a file needs `git rm --cached` once.
+# tests/gitignore.test.mjs checks that no tracked file matches these rules.
 .DS_Store
 Thumbs.db
 .idea/

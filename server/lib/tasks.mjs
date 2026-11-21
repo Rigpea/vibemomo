@@ -793,7 +793,7 @@ export async function openInClaudeCode(projectPath, tid, { launcher = spawn } = 
   let detail = '';
   try {
     if (isWin) {
-      const banner = `echo Atelier task ${tid} - the prompt is on your clipboard: paste it into Claude Code and press Enter. & echo Brief: .studio\tasks\${tid}\brief.md & claude`;
+      const banner = `echo vibeMomo task ${tid} - the prompt is on your clipboard: paste it into Claude Code and press Enter. & echo Brief: .studio\tasks\${tid}\brief.md & claude`;
       command = `wt.exe -d "${projectPath}" cmd /k "${banner}"`;
       const clip = launcher('cmd.exe', ['/c', 'clip'], { stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true });
       clip.stdin.end(prompt);

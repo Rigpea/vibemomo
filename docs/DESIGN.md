@@ -192,7 +192,7 @@ is a word with a dot in the state's colour (`.chip`), never a filled badge. Numb
 pages`), small grey overlines for section names, thin separators, no coloured chips, the live dot the one colour that
 means "now".
 
-**The shell.** The top bar: the mark and "Atelier", the project picker (a select of every project with its kind in
+**The shell.** The top bar: the mark (a V) and "vibeMomo", the project picker (a select of every project with its kind in
 plain words beside it and the live dot before a working project), the status words, the theme and help buttons. The
 view row under it: Workbench · Learning · Inspiration · Claude Code · Tasks · Memory · Budget · Settings as tabs (the current one on a soft
 panel), and at the right the version pill (`#n label`, the changed-files count, the preferred star). The left rail is

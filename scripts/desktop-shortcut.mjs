@@ -1,10 +1,13 @@
 // `npm run app:shortcut` [--remove]   (Windows)
-// Puts "Atelier" on the Desktop: a shortcut that opens the studio window from THIS folder
+// Puts "vibeMomo" on the Desktop: a shortcut that opens the studio window from THIS folder
 // (node_modules/electron/dist/electron.exe <this folder>), the same as `npm run app`. The
 // companion it starts when none is running is the source here, with the projects beside it and
 // the pid file in .local/, so `npm run restart` and studio tasks see the same server. The portable
 // exe in dist-app/ is for another machine: it runs a temp copy of the source and keeps new projects
 // under Documents\Atelier projects (README, "Desktop app"). Decision row 64.
+// The shortcut was called Atelier.lnk before the visible rename. That one is replaced (and removed by --remove) only
+// when it opens this folder's window: its target is this electron.exe and its argument this folder. Any other
+// Atelier.lnk is someone else's and stays.
 import path from 'node:path';
 import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -34,10 +37,31 @@ function ps(script) {
 const q = (s) => `'${String(s).replace(/'/g, "''")}'`;
 
 const desktop = ps(`[Environment]::GetFolderPath('Desktop')`);
-const lnk = path.join(desktop, 'Atelier.lnk');
+const lnk = path.join(desktop, 'vibeMomo.lnk');
+const oldLnk = path.join(desktop, 'Atelier.lnk');
+
+/** What a shortcut on disk opens, read back: { target, args, cwd, icon }. */
+function readShortcut(file) {
+  const [target, args, cwd, icon] = ps(`$s = (New-Object -ComObject WScript.Shell).CreateShortcut(${q(file)}); "$($s.TargetPath)|$($s.Arguments)|$($s.WorkingDirectory)|$($s.IconLocation)"`).split('|');
+  return { target, args, cwd, icon };
+}
+const samePath = (a, b) => path.resolve(String(a || '')).toLowerCase() === path.resolve(String(b || '')).toLowerCase();
+
+/** Remove the old Atelier.lnk only when it opens this folder's window; say why one is left. */
+function dropOldShortcut() {
+  if (!fs.existsSync(oldLnk)) return;
+  const s = readShortcut(oldLnk);
+  if (!samePath(s.target, electron) || !samePath(s.args.replace(/^"|"$/g, ''), ROOT)) {
+    log(`left ${oldLnk}: it opens ${s.target} ${s.args}, not this folder's window`);
+    return;
+  }
+  fs.rmSync(oldLnk);
+  log(`removed ${oldLnk} (this shortcut's name before the rename)`);
+}
 
 if (remove) {
   if (fs.existsSync(lnk)) { fs.rmSync(lnk); log(`removed ${lnk}`); } else log(`nothing at ${lnk}`);
+  dropOldShortcut();
   process.exit(0);
 }
 
@@ -46,12 +70,12 @@ $s.TargetPath = ${q(electron)}
 $s.Arguments = ${q(`"${ROOT}"`)}
 $s.WorkingDirectory = ${q(ROOT)}
 $s.IconLocation = ${q(`${icon},0`)}
-$s.Description = 'Atelier: opens the studio window; starts the companion from this folder when none is running'
+$s.Description = 'vibeMomo: opens the studio window; starts the companion from this folder when none is running'
 $s.Save()`);
 
 // Report what is on disk, not what was asked for.
-const back = ps(`$s = (New-Object -ComObject WScript.Shell).CreateShortcut(${q(lnk)}); "$($s.TargetPath)|$($s.Arguments)|$($s.WorkingDirectory)|$($s.IconLocation)"`);
-const [target, args, cwd, ico] = back.split('|');
+const { target, args, cwd, icon: ico } = readShortcut(lnk);
+dropOldShortcut();
 log(lnk);
 log(`opens ${target} ${args}`);
 log(`in ${cwd}; icon ${ico}`);

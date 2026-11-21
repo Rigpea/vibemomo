@@ -288,7 +288,7 @@ async function renderMachine() {
     ['Graphics', gpus.length ? gpus.join(', ') : 'not reported'],
     ['Node', m.node],
   ] : gpus.length ? [['Graphics', gpus.join(', ')]] : [];
-  if (desk) rows.push(['Desktop app', [desk.version ? `Atelier ${desk.version}` : null, desk.electron || specs?.electron ? `Electron ${desk.electron || specs.electron}` : null, desk.chrome ? `Chrome ${desk.chrome}` : null].filter(Boolean).join(' · ')]);
+  if (desk) rows.push(['Desktop app', [desk.version ? `vibeMomo ${desk.version}` : null, desk.electron || specs?.electron ? `Electron ${desk.electron || specs.electron}` : null, desk.chrome ? `Chrome ${desk.chrome}` : null].filter(Boolean).join(' · ')]);
   clear(box, over('This machine'), note ? el('p.meta', note) : null, rows.length ? kv(rows) : null,
     !desk ? el('p.meta', { style: { marginTop: '8px' } }, 'Running in a browser; the desktop app adds the graphics details it reads itself.') : null);
 }

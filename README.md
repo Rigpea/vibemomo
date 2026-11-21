@@ -8,16 +8,17 @@ folder, and you try it, compare it with the last version, and keep the one you l
 [Download and run](#download-and-run) · [User guide](docs/GUIDE.md) · [Architecture](docs/ARCHITECTURE.md) ·
 [Contributing](CONTRIBUTING.md)
 
-![The Atelier workbench running a sample notes project](docs/images/workbench.jpg)
+![The workbench running a sample notes project](docs/images/workbench.jpg)
 
 It runs on your own computer as a small Node server with a browser window. Your projects are
-ordinary folders with their own git history. vibemomo adds the things that usually get lost
+ordinary folders with their own git history. vibeMomo adds the things that usually get lost
 between prompts: what you liked, what must not change, what to build from, and every version
 you decided to keep.
 
-> **About the name.** vibeMomo is the public name. Inside the code and on
-> the screen the studio is still called **Atelier**: the package, the `atelier` command, the
-> `ATELIER_*` settings and the `~/.atelier` data folder. This README uses the names you will
+> **About the name.** The studio is called vibeMomo on the screen, in the desktop window and on
+> its shortcut. Its earlier name, Atelier, stays in what you type and what is stored, so existing
+> setups keep working: the package, the `atelier` command, the `ATELIER_*` settings, the
+> `atelier.json` manifest and the `~/.atelier` data folder. This README uses the names you will
 > actually see and type.
 
 <a id="start"></a>
@@ -166,7 +167,11 @@ carry them.
 - **AI and device tools.** In Settings › Connected accounts, sign in through Claude Code for the Companion and workers, or through ChatGPT for the Codex tab. The installed provider CLI handles browser approval and keeps its own credentials; the studio stores none. Session costs depend on your Claude or ChatGPT plan. The Codex tab uses the Codex CLI, Budget utilities use an Anthropic API key, and the Android phone tab uses the Android SDK.
 - **Development checks.** After a full `npm ci`, use `npm run check` for syntax checks, template checks and tests.
 - New projects are created **beside** this folder, as its siblings. Set `ATELIER_PROJECTS_DIR`
-  to choose another place. The studio's own data (project list, memory, settings) goes to
+  to choose another place. If that place is inside this folder, use `projects/`, `products/`,
+  `workspace/` or `workspaces/` at its top: `.gitignore` keeps those out of the studio's own git,
+  as it keeps `.studio/`, `.atelier/`, `.local/` and `.env`. An ignore rule does not untrack a
+  file git already tracks; that needs `git rm --cached` once. The studio's own data (project
+  list, memory, settings) goes to
   `~/.atelier`; set `ATELIER_DATA_DIR` to move it. `.env.example` lists the settings.
 - The Memory view starts empty. The studio writes no preference for you: add how you like to
   work with **Add memory**, and the briefs Claude Code reads carry what you added.

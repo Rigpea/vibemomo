@@ -1,6 +1,6 @@
 # Contributing to vibeMomo
 
-vibeMomo is an early developer preview of the Atelier studio. Useful contributions include
+vibeMomo is an early developer preview of the studio (called Atelier in the code). Useful contributions include
 reproducible bug reports, clearer setup instructions, and small improvements to the build,
 preview, and version workflow. Open an issue before starting a large feature so we can agree
 on the problem and scope.

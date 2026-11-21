@@ -1,7 +1,7 @@
 {
   "name": "atelier",
   "version": "0.3.29",
-  "description": "Atelier, an adaptive creative studio: build apps, sites, games, actions and audio with Claude; keep real versions, memory and a resumable Claude Code handoff.",
+  "description": "vibeMomo, an adaptive creative studio: build apps, sites, games, actions and audio with Claude; keep real versions, memory and a resumable Claude Code handoff.",
   "type": "module",
   "main": "app/main.cjs",
   "private": true,
@@ -42,7 +42,7 @@
   },
   "build": {
     "appId": "local.atelier.studio",
-    "productName": "Atelier",
+    "productName": "vibeMomo",
     "directories": {
       "output": "dist-app"
     },
@@ -63,6 +63,6 @@
       "target": "portable",
       "icon": "app/icon.png"
     },
-    "artifactName": "Atelier-${version}-portable.${ext}"
+    "artifactName": "vibeMomo-${version}-portable.${ext}"
   }
 }
