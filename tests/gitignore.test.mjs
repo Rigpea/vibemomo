@@ -28,6 +28,7 @@ test('product folders and studio data inside a checkout are ignored', { skip }, 
     'Atelier projects/sample/index.html',
     'registry.json', 'registry-export.json', 'secrets.json', 'secrets.backup.json', 'live-consent.json',
     'workers.json', 'resources.json', 'memory/m_1.json', 'usage/2026-11.jsonl',
+    'console/cs_sample.json', 'console/cs_sample.jsonl', 'studio-look.json', 'studio-look/ins_sample.png', 'budget.json',
     '.studio/project.json', '.studio/tasks/t_1/brief.md', '.atelier/registry.json', '.local/server.pid',
     '.env', '.env.local', 'docs/evidence/model-participation.json',
   ];
@@ -41,6 +42,8 @@ test('source of the same names deeper down still tracks', { skip }, () => {
     'templates/web-app-notes/src/store.js', 'templates/projects/sample/index.html', 'workbenches/README.md',
     'workbenches/projects/panel.js', 'tests/fixtures/projects/a.json', 'tests/fixtures/registry.json',
     'server/lib/memory/index.mjs', 'docs/GUIDE.md', 'app/icon.ico', '.env.example', 'atelier.json',
+    'server/lib/console.mjs', 'server/lib/studio-look.mjs', 'server/api-utility/budget.mjs',
+    'tests/fixtures/console/a.json', 'tests/fixtures/budget.json',
   ];
   const lost = source.filter((rel) => ignored(rel));
   assert.deepEqual(lost, [], 'these source paths would be ignored');
