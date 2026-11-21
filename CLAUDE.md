@@ -35,8 +35,9 @@ a pid written under WSL means nothing on Windows.
   `server/api-utility/tasks.mjs` (bounded utility tasks), `templates/<name>/` (project templates).
 - Tests are focused on concrete risks (`tests/`); add one when you fix a real bug.
 - Studio versions are git tags `studio/vX.Y.Z`; product versions live in each project.
-- Secrets: `STUDIO_ANTHROPIC_API_KEY` (env or `~/.atelier/secrets.json`) and the studio's Claude Code sign-in
-  `CLAUDE_CODE_OAUTH_TOKEN` (secrets.json only). Never log, return or commit either.
+- Secrets: `STUDIO_ANTHROPIC_API_KEY` (env or `~/.atelier/secrets.json`). Subscription sign-ins belong to the
+  Claude Code and Codex CLIs (Settings › Connected accounts); an older install's `CLAUDE_CODE_OAUTH_TOKEN` in
+  secrets.json is ignored and only removable. Never log, return or commit any of them.
 
 ## Studio tasks
 

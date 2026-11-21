@@ -85,7 +85,7 @@ async function main() {
   const first = await js(panel);
   const firstLook = await js(look);
   const sections = await js(`[...document.querySelectorAll('.set-sec > .overline')].map((n) => n.textContent)`);
-  check('Settings opens on Appearance, with Layout as the next section', sections[0] === 'Appearance' && sections[1] === 'Layout', sections);
+  check('Settings opens on Connected accounts, then Appearance, with Layout as the next section', sections[0] === 'Connected accounts' && sections[1] === 'Appearance' && sections[2] === 'Layout', sections);
   check('the section has its five controls, each at its default, and Reset has nothing to do', first?.labels.join() === 'Accent,Density,Text size,Corners,Motion' && first.density.join() === '[Comfortable],Compact' && first.textSize.join() === 'Small,[Default],Large,Larger' && first.radius.join() === 'Sharp,[Soft],Round' && first.motion.join() === '[Normal],Reduced' && first.reset === true, first);
   check('the accent starts on the studio\'s own, with six presets and the line saying its contrast', first.pick === '#d6a455' && first.hex === '#d6a455' && first.presets.length === 6 && first.presets[0] === '[Amber, #d6a455]' && /^#d6a455 is \d+\.\d:1 against the dark canvas \(text in the accent needs 4\.5:1\)\. The light theme shows #a86f17\.$/.test(first.note || ''), [first.pick, first.presets, first.note]);
   check('the Studio look board\'s colour cards are offered as presets, not the project\'s', first.boardLabel === 'From your Studio look board' && first.board.join(' | ') === 'teal, #5fbcab | sky, #79b3dc | canvas, #232221', [first.boardLabel, first.board]);

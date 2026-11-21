@@ -120,8 +120,11 @@ These five exist to keep a project looking like itself while Claude changes it.
   edit from changing a locked value. The Visualizer is where you see it if one did.
 - **Customization.** Settings › Appearance changes the studio's own look for you: accent,
   density, text size, corners and motion. An accent that would be hard to read on the canvas
-  is refused, with the nearest shade that passes offered instead. A choice is greyed out when
-  one of your fixed rules locks its token, and the rule is named beside it.
+  is refused, with the nearest shade that passes offered instead. Fixed rules bind the
+  studio's source, not your own look: when your look differs from a locked token, one line
+  says so. **Inspiration › Studio look** is a separate board for the studio itself, apart
+  from each project's board: collect colours and notes there and make a look from them, with
+  Undo.
 - **References.** What to build from: links (the page title is fetched for you), code
   snippets, prompts that worked, and notes, each with tags and a line saying what to use it
   for. A task gets only the references that match its request, at most eight.
@@ -150,13 +153,17 @@ carry them.
   stay in Claude Code.
 - **Codex tab** (optional): a second opinion from the Codex CLI on your own Codex login. Its
   own file edits are off unless you turn them on for that session.
+- **Workers** (optional): a task can run in the background on a worker model chosen per task,
+  per project or as the studio default, either a Claude Code model or a Codex model written
+  as `codex:<model>@<effort>`. A Codex worker runs in Codex's `workspace-write` sandbox, so
+  checks that need your own account may not run there; the worker's report says so.
 
 `docs/ARCHITECTURE.md` describes every contract; `docs/DESIGN.md` describes the look.
 
 ## Optional tools and settings
 
 - **Desktop window.** From the same source folder, run `npm ci` to include Electron, then `npm run app`. In Windows PowerShell use `npm.cmd ci` and `npm.cmd run app`.
-- **AI and device tools.** Claude Code can use your CLI sign-in or a studio-specific token saved in Settings. Session costs depend on your Claude plan. The Codex tab uses the Codex CLI, Budget utilities use an Anthropic API key, and the Android phone tab uses the Android SDK.
+- **AI and device tools.** In Settings › Connected accounts, sign in through Claude Code for the Companion and workers, or through ChatGPT for the Codex tab. The installed provider CLI handles browser approval and keeps its own credentials; the studio stores none. Session costs depend on your Claude or ChatGPT plan. The Codex tab uses the Codex CLI, Budget utilities use an Anthropic API key, and the Android phone tab uses the Android SDK.
 - **Development checks.** After a full `npm ci`, use `npm run check` for syntax checks, template checks and tests.
 - New projects are created **beside** this folder, as its siblings. Set `ATELIER_PROJECTS_DIR`
   to choose another place. The studio's own data (project list, memory, settings) goes to
@@ -172,7 +179,14 @@ No API key is needed to start the studio; the optional API utilities are billed 
 
 - **Port already in use:** set `ATELIER_PORT` in `.env`, then open that port in your browser.
 - **Claude Code missing:** confirm `claude --version` works in the same terminal used to start
-  the studio, then check the sign-in section in Settings.
+  the studio, then check Settings › Connected accounts.
+- **Codex missing or signed out:** confirm `codex --version` works in that terminal (or set
+  its path in Settings › Console), then sign in from Settings › Connected accounts or run
+  `codex login` yourself. The Codex tab and the worker model list read the models and
+  efforts from the Codex CLI's own model cache (`~/.codex/models_cache.json`), with a short
+  built-in list only when that cache cannot be read; if a model you expect is missing,
+  update the Codex CLI and run it once so it refreshes the cache. Which models an account
+  may use is decided by OpenAI, not by the studio.
 - **Terminal unavailable:** `node-pty` needs its native component. If npm says its install
   scripts were blocked, review and allow that package's scripts, then reinstall. See the
   [contribution guide](CONTRIBUTING.md#local-setup) for details.
