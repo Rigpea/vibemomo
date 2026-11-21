@@ -138,7 +138,11 @@ export function codexOfferWords(codex) {
  */
 export const modelProp = (what, codex = null) => ({ type: 'string', description: `${what} One of ${CONSOLE_MODELS.join(', ')} for a Claude Code worker; or, for a worker on the person's Codex CLI and its saved login, codex:<model>@<effort> (codex:<model> alone takes the effort Codex is configured with), for example codex:gpt-6-astra@xhigh; or default.${codexOfferWords(codex) || ' atelier_set_worker_model refuses a Codex model or effort this machine\'s Codex does not offer and names the ones it does.'}` });
 /** What a manager must know before it relies on a Codex worker: said once in the tools' descriptions and after a Codex model is set. */
-export const CODEX_WORKER_NOTE = 'A Codex worker runs the person\'s Codex CLI on the login saved there, in Codex\'s workspace-write sandbox: it edits files in the project folder, cannot write outside it or reach the internet, and cannot commit, so the studio keeps its version when its turn ends. It cannot run tools that need the person\'s own Windows account (seen: Unity batch mode finds no licence there), and it cannot take an explore task. Codex reports no cost.';
+export const CODEX_WORKER_NOTE = 'A Codex worker runs the person\'s Codex CLI on the login saved there, in Codex\'s workspace-write sandbox: it edits files in the project folder, cannot write outside it or reach the internet, and cannot commit, so the studio keeps its version when its turn ends. It cannot run a project\'s checks when they need the person\'s own account (seen: Unity batch mode finds no licence there, so it cannot compile or test a Unity project): hand it work whose checks run inside the project folder, or have the checks run afterwards outside the sandbox, by the person or by a Claude Code worker on a follow-up task, and do not call its result checked before that. It cannot take an explore task, and it is not pointed at the task\'s department skills (they are Claude Code\'s). Codex reports no cost.';
+/** In atelier_task_report, once, when a Codex worker ran the task or its next worker would be one: how to read its result. */
+export const CODEX_REPORT_NOTE = 'Codex worker: it works in Codex\'s sandbox, so a check that needs the person\'s own account (a Unity compile or test, anything writing outside the project folder or using the internet) did not run there, and it is not pointed at the department\'s skills. Its Verified line names what did run; have the project\'s own checks run outside the sandbox, by the person or a Claude Code worker, before you accept.';
+/** Whether a worker model value or a handover's record names Codex. */
+const isCodex = (value) => (typeof value === 'string' ? parseWorkerModel(value)?.backend === 'codex' : value?.backend === 'codex');
 const OLDER_STUDIO = 'the running studio is older than this tool and has no route for it; restart the studio';
 const isNoRoute = (err) => err?.status === 404 && /No route/.test(err.message || '');
 /** What a worker ran or runs on, from a start answer, the worker state or a handover event ({ backend, model, effort }). */
@@ -701,7 +705,7 @@ export function createTools({ studio = DEFAULT_STUDIO, project: bound = null, se
     },
     {
       name: 'atelier_task_report',
-      description: 'Read where the work stands. With a task id: its status, request and acceptance, the model its next worker would start on (and where that comes from: the task, the project or the studio default) and what each of its workers ran on (Claude Code or Codex, the model and the effort its handover recorded), the worker\'s notes and question, and its result (summary, verification, what was left open, the version and the files changed). Without one: the project\'s worker model in effect and its source, then every open task of the project with its status, the model it runs or will run on, its department, the worker running now and the queue.',
+      description: 'Read where the work stands. With a task id: its status, request and acceptance, the model its next worker would start on (and where that comes from: the task, the project or the studio default) and what each of its workers ran on (Claude Code or Codex, the model and the effort its handover recorded; where Codex ran or would run, one line on what a Codex worker could not check), the worker\'s notes and question, and its result (summary, verification, what was left open, the version and the files changed). Without one: the project\'s worker model in effect and its source, then every open task of the project with its status, the model it runs or will run on, its department, the worker running now and the queue.',
       inputSchema: { type: 'object', properties: { project: projectProp, task: { type: 'string', pattern: '^t_[a-z0-9]+$', description: 'The task id; leave it out for the overview.' } }, additionalProperties: false },
       async run(args) {
         const p = await projectOf(args);
@@ -726,10 +730,14 @@ export function createTools({ studio = DEFAULT_STUDIO, project: bound = null, se
           .map((e) => `- ${e.ts || e.at || ''} ${e.type}${e.actor ? ` (${e.actor})` : ''}${e.data?.text ? `: ${String(e.data.text).slice(0, 300)}` : ''}`); // events carry ts
         // Each handover as its event recorded it: a worker's names its backend, model and effort (ranOn); a Chat or
         // terminal handover's does not.
-        const ran = events.filter((e) => e.type === 'handed_to_console').map((e) => `${e.data?.worker ? ranOn(e.data) : 'a Chat session, model not in the task\'s events'}${e.ts ? ` (${e.ts})` : ''}`);
+        const handovers = events.filter((e) => e.type === 'handed_to_console');
+        const ran = handovers.map((e) => `${e.data?.worker ? ranOn(e.data) : 'a Chat session, model not in the task\'s events'}${e.ts ? ` (${e.ts})` : ''}`);
+        // Said only where Codex is in play: a worker of this task ran on it, or its next worker would.
+        const codex = handovers.some((e) => e.data?.worker && isCodex(e.data)) || isCodex(f?.effective?.model);
         return [
           `Task ${task.id} in ${label(p)}: "${task.title}" · status ${task.status} · mode ${task.mode}${task.department ? ` · department ${task.department.name}` : ''}`,
           f ? `Worker model: the next worker of this task would start on ${workerWords(f.effective.model)} (${f.effective.words}). Ran on: ${ran.join('; ') || 'no worker yet'}.` : `Worker model: not read (${OLDER_STUDIO}). Ran on: ${ran.join('; ') || 'no worker yet'}.`,
+          codex ? CODEX_REPORT_NOTE : null,
           `Request: ${String(task.request || '').slice(0, 1200)}`,
           task.acceptance?.length ? `Acceptance:\n${task.acceptance.map((a) => `- ${a}`).join('\n')}` : 'Acceptance: none written',
           said.length ? `Activity:\n${said.join('\n')}` : 'Activity: none yet',
@@ -740,7 +748,7 @@ export function createTools({ studio = DEFAULT_STUDIO, project: bound = null, se
             r.unresolved?.length ? `Left open: ${r.unresolved.join('; ')}` : null,
             r.filesChanged?.length ? `Files changed: ${r.filesChanged.slice(0, 40).join(', ')}` : null,
           ].filter(Boolean).join('\n') : 'Result: none yet',
-        ].join('\n');
+        ].filter(Boolean).join('\n');
       },
     },
     {

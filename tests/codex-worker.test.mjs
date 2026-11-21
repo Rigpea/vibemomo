@@ -27,7 +27,8 @@ const tasks = await import('../server/lib/tasks.mjs');
 const models = await import('../server/lib/models.mjs');
 const { checkCodexWorker, workerModelLevels, studioWorkerModelOf } = await import('../server/lib/worker-model.mjs');
 const { tallyUsage, usageText, CODEX_NO_COST } = await import('../server/lib/usage.mjs');
-const { createTools, modelProp, ranOn, ranWords, codexOfferWords, workerModelText, CODEX_WORKER_NOTE } = await import('../server/lib/mcp/tools.mjs');
+const { createTools, modelProp, ranOn, ranWords, codexOfferWords, workerModelText, CODEX_WORKER_NOTE, CODEX_REPORT_NOTE } = await import('../server/lib/mcp/tools.mjs');
+const { CODEX_FINISH_NOTE } = await import('../server/lib/workers.mjs');
 const words = await import('../client/components/worker-model-words.js');
 const focus = await import('../client/components/focus.js');
 const { sessionBrainLine } = await import('../client/components/companion-words.js');
@@ -249,7 +250,8 @@ test('the manager\'s tools word a Codex worker: the model input is a described s
   assert.equal(ranOn({}), 'a worker, model not recorded');
   assert.match(workerModelText({ studio: { model: 'claude-fable-5-2', stored: null }, project: { name: 'X', model: 'codex:gpt-6-astra@xhigh' }, task: null, effective: { model: 'codex:gpt-6-astra@xhigh', words: 'set for this project' } }),
     /^Worker model now: project X: Codex gpt-6-astra at xhigh effort · studio default: claude-fable-5-2 \(built in; none stored\)\. The next worker of X, on a task with no model of its own, starts on Codex gpt-6-astra at xhigh effort \(set for this project\)\.$/);
-  for (const part of ['workspace-write sandbox', 'cannot commit', 'cannot write outside it or reach the internet', 'Unity batch mode finds no licence', 'cannot take an explore task', 'Codex reports no cost']) assert.ok(CODEX_WORKER_NOTE.includes(part), part);
+  for (const part of ['workspace-write sandbox', 'cannot commit', 'cannot write outside it or reach the internet', 'cannot run a project\'s checks when they need the person\'s own account', 'Unity batch mode finds no licence', 'by the person or by a Claude Code worker on a follow-up task', 'cannot take an explore task', 'not pointed at the task\'s department skills', 'Codex reports no cost']) assert.ok(CODEX_WORKER_NOTE.includes(part), part);
+  for (const part of ['a check that needs the person\'s own account', 'did not run there', 'not pointed at the department\'s skills', 'before you accept']) assert.ok(CODEX_REPORT_NOTE.includes(part), part);
   const tools = createTools({ studio: 'http://127.0.0.1:1', project: 'p_x' });
   for (const name of ['atelier_start_task', 'atelier_set_worker_model']) {
     const t = tools.find((x) => x.name === name);
@@ -285,7 +287,7 @@ test('the client: the Focus panel offers Codex models with an effort, keeps what
   assert.deepEqual(focus.workerModelPatch({}, words.workerValue('codex:gpt-6-astra', 'xhigh')), { workerModel: 'codex:gpt-6-astra@xhigh' });
   assert.deepEqual(focus.workerModelPatch({ workerModel: 'codex:gpt-6-astra@xhigh' }, 'codex:gpt-6-astra@xhigh'), {}, 'unchanged: no field');
   assert.deepEqual(focus.studioDefaultPatch({ workerModel: 'codex:gpt-6-astra' }, 'default'), { workerModel: null });
-  assert.match(words.codexWorkerHint(status), /workspace-write sandbox: it cannot commit \(the studio keeps its version\), reach the internet or take an explore task\.$/);
+  assert.match(words.codexWorkerHint(status), /workspace-write sandbox: it cannot commit \(the studio keeps its version\), reach the internet, run checks that need your own account \(a Unity compile or test\) or take an explore task\.$/);
   assert.equal(words.codexWorkerHint({ cli: true, loggedIn: false, problem: 'Codex is signed out on this machine: run `codex login`.' }), 'Codex is signed out on this machine: run `codex login`.');
   assert.equal(sessionBrainLine({ backend: 'codex', model: 'gpt-6-astra', effort: 'xhigh', sandbox: 'workspace-write' }), 'Codex · gpt-6-astra · xhigh effort · sandbox workspace-write');
   assert.equal(sessionBrainLine({ backend: 'claude-code', model: 'claude-opus-5-5' }), 'Claude Code · Opus 5.5 · your login');
@@ -350,10 +352,12 @@ test('through a real server with the fake Codex CLI: a task set to codex:gpt-6-a
   assert.equal((await api('GET', `/api/projects/${project.id}/changes`)).data.dirty, false, 'the work is committed: the tree is clean');
   const report = await tools.find((t) => t.name === 'atelier_task_report').run({ task: tid });
   assert.match(report, /\nWorker model: the next worker of this task would start on Codex gpt-6-astra at low effort \(set for this project\)\. Ran on: Codex gpt-6-astra at low effort, sandbox workspace-write \(20\d\d-/);
+  assert.ok(report.includes(`\n${CODEX_REPORT_NOTE}\nRequest: `), 'the report says once how to read a Codex worker\'s result');
   assert.match(report, new RegExp(`\\nResult: Added notes/hello\\.txt\\nVersion: ${versionNames[task.result.versionId].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\nVerified: read the file back`));
   // No manager session started it and the project has no Companion session, so the report is held, whole.
   assert.equal(held.length, 1);
   assert.match(held[0], new RegExp(`^\\[Studio report: not from the person\\] Worker report for task ${tid} "Add a note file": finished, ready to review\\. Summary: Added notes/hello\\.txt Version: #2 Add a note file\\. Verified: read the file back\\.`));
+  assert.ok(held[0].includes(`${CODEX_FINISH_NOTE} Review it: `), 'a Codex worker\'s finished report says what its sandbox could not have checked');
 
   // Usage: the Codex worker is counted apart and has no cost; Claude Code's counts hold nothing.
   const usage = await tools.find((t) => t.name === 'atelier_worker_usage').run({});

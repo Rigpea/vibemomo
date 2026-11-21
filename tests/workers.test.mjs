@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { createWorkers, reportText, interruptedText, lastFailure, REPORT_MARK, CODEX_WORKER_SANDBOX, CODEX_NO_EXPLORE } from '../server/lib/workers.mjs';
+import { createWorkers, reportText, interruptedText, lastFailure, REPORT_MARK, CODEX_WORKER_SANDBOX, CODEX_NO_EXPLORE, CODEX_FINISH_NOTE } from '../server/lib/workers.mjs';
 import * as codexMod from '../server/lib/codex.mjs';
 import { createTools } from '../server/lib/mcp/tools.mjs';
 import { checkWorkerModel } from '../server/lib/models.mjs';
@@ -590,4 +590,9 @@ test('codex worker: at its turn\'s end the studio keeps the version of the finis
   assert.equal(lastFailure({ events: [{ kind: 'tool', id: 'a', summary: 'ls' }, { kind: 'tool-result', id: 'a', ok: true }] }), '', 'a turn whose commands all worked names none');
   assert.match(lastFailure({ events: [{ kind: 'denied', id: 'b', name: 'Shell', summary: 'rm -rf /' }] }), /One of its commands failed or was refused; the last: `rm -rf \/` was refused\./);
   assert.match(reportText({ task: { id: 't_a', title: 'T', status: 'working' }, turn: { timedOut: true, error: 'timed out after 5400000 ms' } }), /did not finish: its turn timed out \(timed out after 5400000 ms\) before it finished\./);
+  // A finished report says what a Codex worker's sandbox could not have checked; a Claude Code worker's does not.
+  const finishedTask = { id: 't_a', title: 'T', status: 'review', result: { summary: 'Done', verification: ['read it back'] } };
+  assert.match(reportText({ task: finishedTask, codex: true }), /Verified: read it back\. A Codex worker did this in Codex's sandbox: a check that needs the person's own account .* did not run there, .* before you accept\. Review it: /);
+  assert.equal(reportText({ task: finishedTask }).includes(CODEX_FINISH_NOTE), false);
+  assert.equal(reportText({ task: { id: 't_a', title: 'T', status: 'working' }, turn: {}, codex: true }).includes(CODEX_FINISH_NOTE), false, 'only a finish carries it');
 });

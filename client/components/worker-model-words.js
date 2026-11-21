@@ -69,5 +69,5 @@ export function codexWorkerEfforts(status, model, current = '') {
 /** Under the worker model field when a Codex model is chosen: what stands in the way, else what such a worker is. */
 export function codexWorkerHint(status) {
   if (status?.cli === false || status?.loggedIn === false) return status.problem || 'Codex is not ready on this machine.';
-  return 'A Codex worker runs your Codex CLI on its saved login, in Codex\'s workspace-write sandbox: it cannot commit (the studio keeps its version), reach the internet or take an explore task.';
+  return 'A Codex worker runs your Codex CLI on its saved login, in Codex\'s workspace-write sandbox: it cannot commit (the studio keeps its version), reach the internet, run checks that need your own account (a Unity compile or test) or take an explore task.';
 }

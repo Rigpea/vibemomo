@@ -1303,7 +1303,14 @@ with its answer, so it cannot keep anything running in the background; the studi
     <model> at <effort> effort, sandbox workspace-write" or "Claude Code <model> at <effort> effort" per handover
     (`ranOn`); `atelier_set_worker_model` words each level with `workerWords` and, after a Codex model is set, says
     once what a Codex worker is (`CODEX_WORKER_NOTE`) and when Codex is not ready (`GET /api/console/codex`'s
-    `problem`). The tools' `model` input is a described string (the enum is gone: Codex's models are read from the
+    `problem`). That note is also in the descriptions of `atelier_start_task` and `atelier_set_worker_model`, and
+    names what a manager must not hand such a worker: a project's checks that need the person's own account (they
+    run afterwards outside the sandbox, by the person or a Claude Code worker on a follow-up task), an explore task,
+    and work that leans on the department's skills, which are Claude Code's and which a Codex worker is not pointed
+    at. Where a Codex worker ran a task or its next worker would be one, `atelier_task_report` adds one line on how
+    to read the result (`CODEX_REPORT_NOTE`), and a Codex worker's "finished, ready to review" report carries the
+    same caution once (`CODEX_FINISH_NOTE` in workers.mjs, from the session record's `backend`), so nothing reads as
+    checked that the sandbox could not have run (decision row 185). The tools' `model` input is a described string (the enum is gone: Codex's models are read from the
     machine), and `tools/list` names the models and efforts Codex offers now (`listSchema`).
   - **When it does not finish.** `codex exec` never asks: a command the sandbox refuses fails and Codex is told, so
     there is no approval to wait for. A turn that ends with no finish and no question reports "did not finish: its
@@ -1320,7 +1327,10 @@ with its answer, so it cannot keep anything running in the background; the studi
     directory '/c/Users/<the person>': Permission denied`, WMI "Access denied", and Unity's "No valid Unity Editor
     license found" (exit 198), because the licence belongs to the person's own Windows account. The studio widens
     nothing: extra writable folders, network access or another Windows sandbox mode are the person's to set in their
-    Codex configuration, and the studio passes none of them.
+    Codex configuration, and the studio passes none of them. So a Codex worker changes such a project's code and
+    its checks run outside the sandbox afterwards (row 185). Loopback being open means the sandbox is not a wall
+    between a workspace-write Codex run and the studio's own API on 127.0.0.1, which has no sign-in; that is an
+    open item of the studio project, and nothing here relies on it or closes it.
 - Usage to choose by (server/lib/usage.mjs `tallyUsage`, `GET /api/workers/usage[?projectId=]`, the tool
   `atelier_worker_usage { project? }`): counted from the console's own session records (`sessionRecords()`), for the
   last 24 hours and the last 7 days, one row per model and kind (worker, companion, other Claude Code session):

@@ -262,15 +262,19 @@ Under the preview, the dock:
   itself, and a running worker keeps what it started on. A Codex worker gets the same brief and
   reports through the same commands, and its result is a version to try like any other; the task
   row says "handed to Codex (gpt-6-astra, xhigh effort)" and the version's origin reads Codex.
-  Four things are different, and worth knowing before you rely on it. It runs in Codex's own
+  Five things are different, and worth knowing before you rely on it. It runs in Codex's own
   sandbox ("may edit files", never wider, and the studio adds no flag that removes it): on this
   computer it could change files in the project's folder, could not write anywhere else, had no
   internet and could not commit, so the studio keeps its version at the moment its turn ends (the
   task row reads "finish recorded" until then). Its commands run under a separate Windows account
   of Codex's, so a tool that needs your own account does not work there: Unity in batch mode found
   no licence, and a Codex worker cannot compile or test a Unity project; it then stops and asks,
-  as any worker that is stuck. It cannot take an explore task (options are versions it could not
-  keep); the studio refuses that start and says so. And Codex reports no cost, so the usage the
+  as any worker that is stuck. So for such a project it changes the code, and the checks are run
+  afterwards outside the sandbox, by you or by a Claude Code worker on a follow-up task; the
+  Companion is told this, and its report on a Codex worker's result says what could not have been
+  checked there. It cannot take an explore task (options are versions it could not
+  keep); the studio refuses that start and says so. It is not pointed at the skills of the task's
+  department, because skills are Claude Code's. And Codex reports no cost, so the usage the
   Companion can read counts Codex's sessions, turns and tokens apart and shows no cost for them. A
   turn is stopped after 90 minutes, like a Claude Code worker's; whatever ends it, the Companion
   gets a report that says so.

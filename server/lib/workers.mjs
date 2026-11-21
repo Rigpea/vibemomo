@@ -24,6 +24,7 @@ export { WORKER_MODEL }; // the built-in studio default; the stored default, a p
 export const WORKER_EFFORT = 'high'; // a Claude Code worker's; a Codex worker's effort is part of its worker model
 export const CODEX_WORKER_SANDBOX = 'workspace-write'; // as server/lib/codex.mjs; a test holds them equal
 export const CODEX_NO_EXPLORE = 'An explore task cannot go to a Codex worker: its options are kept and restored as versions, and Codex\'s sandbox cannot write the project\'s .git. Set a Claude Code model for this task (atelier_set_worker_model, scope task), or change what the task asks for.';
+export const CODEX_FINISH_NOTE = ' A Codex worker did this in Codex\'s sandbox: a check that needs the person\'s own account (a Unity compile or test, anything outside the project folder or on the internet) did not run there, so have the project\'s own checks run outside it, by the person or a Claude Code worker, before you accept.';
 export const WORKER_PERMISSION = 'auto';
 export const STARTABLE = ['ready', 'working', 'interrupted', 'needs-input'];
 export const REPORT_MARK = '[Studio report: not from the person]';
@@ -58,8 +59,9 @@ export function endWords(turn = {}, status = 'working') {
  * The words of a worker's report to the manager, from the task as the worker left it and the turn's end.
  * task: { id, title, status, result }; events: the task's events; turn: the console turn ({ error, cancelled, timedOut, text }).
  * finishError: why the studio could not keep the version of a finish the worker recorded (a sandboxed worker), if so.
+ * codex: the worker was a Codex one, so a finished report says once what its sandbox could not have checked.
  */
-export function reportText({ task, events = [], turn = {}, versionName = null, queued = 0, finishError = null }) {
+export function reportText({ task, events = [], turn = {}, versionName = null, queued = 0, finishError = null, codex = false }) {
   const head = `${REPORT_MARK} Worker report for task ${task.id} "${cut(task.title, 90)}":`;
   const next = nextWords(queued);
   const review = ` Review it: read it with atelier_task_report ${task.id} and the changes with atelier_read_diff, check them against the task's acceptance, then accept or send it back with atelier_review_task, update what needs updating, and tell the person in a few lines.`;
@@ -71,7 +73,7 @@ export function reportText({ task, events = [], turn = {}, versionName = null, q
       r.verification?.length ? `Verified: ${r.verification.map((v) => cut(v, 120)).join('; ')}.` : 'Verification: none named.',
       r.unresolved?.length ? `Left open: ${r.unresolved.map((v) => cut(v, 120)).join('; ')}.` : null,
     ].filter(Boolean).join(' ');
-    return `${head} finished, ready to review. ${facts}${review}${next}`;
+    return `${head} finished, ready to review. ${facts}${codex ? CODEX_FINISH_NOTE : ''}${review}${next}`;
   }
   if (task.status === 'needs-input') {
     const q = [...events].reverse().find((e) => e.type === 'question');
@@ -361,7 +363,7 @@ export function createWorkers({ consoleSvc, tasks, loadProject, listProjects = a
         managerSessionId = managerSessionId || managerOf(rec.projectId, rec.id, events);
         const vid = task.result?.versionId;
         await afterChange(rec.projectId, { taskId: rec.taskId });
-        text = reportText({ task, events, turn, versionName: vid ? versionNames?.[vid] || vid : null, queued: p.queue.length, finishError });
+        text = reportText({ task, events, turn, versionName: vid ? versionNames?.[vid] || vid : null, queued: p.queue.length, finishError, codex: rec.backend === 'codex' });
       } catch (err) {
         // The task could not be read: the report still goes, with the turn's own error and the read's.
         text = `${REPORT_MARK} Worker report for task ${rec.taskId}: its turn ended (${endWords(turn)}), and the task record could not be read: ${cut(err.message, 200)}.${nextWords(p.queue.length)}`;
@@ -439,7 +441,7 @@ export function createWorkers({ consoleSvc, tasks, loadProject, listProjects = a
           const full = await tasks.getTask(ctx.path, t.id).catch(() => null);
           const vid = full?.task?.result?.versionId;
           await tasks.appendEvent(ctx.path, t.id, 'worker_interrupted', 'studio', { sessionId: sid, managerSessionId, reason: 'studio restart', after });
-          held.push({ projectId, managerSessionId, text: `${reportText({ task: full?.task || t, events, versionName: vid ? full.versionNames?.[vid] || vid : null })} (Sent after a studio restart that cut its session off once it had ${after === 'review' ? 'finished' : 'asked'}.)`, at: nowIso() });
+          held.push({ projectId, managerSessionId, text: `${reportText({ task: full?.task || t, events, versionName: vid ? full.versionNames?.[vid] || vid : null, codex: rec.backend === 'codex' })} (Sent after a studio restart that cut its session off once it had ${after === 'review' ? 'finished' : 'asked'}.)`, at: nowIso() });
           out.interrupted.push(t.id);
           continue;
         }

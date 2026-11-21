@@ -176,7 +176,7 @@ async function main() {
   let effort = await effortOf('worker-model');
   check('A Codex model shows its effort select: the configured effort first, then the ones the model takes', effort.hidden === false && effort.value === '' && JSON.stringify(effort.options) === JSON.stringify(['=Effort Codex is configured with (xhigh)', 'low=low effort', 'high=high effort', 'xhigh=xhigh effort']), JSON.stringify(effort));
   text = await identityText();
-  check('One note says what a Codex worker is', (text.match(/A Codex worker runs your Codex CLI on its saved login, in Codex's workspace-write sandbox: it cannot commit \(the studio keeps its version\), reach the internet or take an explore task\./g) || []).length === 1, text);
+  check('One note says what a Codex worker is', (text.match(/A Codex worker runs your Codex CLI on its saved login, in Codex's workspace-write sandbox: it cannot commit \(the studio keeps its version\), reach the internet, run checks that need your own account \(a Unity compile or test\) or take an explore task\./g) || []).length === 1, text);
   await chooseEffort('worker-model', 'xhigh');
   await showSelects();
   await shot('8-codex-edit');
