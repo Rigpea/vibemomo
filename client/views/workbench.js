@@ -6,7 +6,7 @@
 // (the dock: Claude Code, Terminal, Source and the kind's panels); the version strip and a status line under it;
 // the Versions drawer over it all.
 import { el, clear, button, icon, empty, errorBox, toast, shortLabel, closeDialogsIn, segmented, ago } from '../components/ui.js';
-import { previewUrl } from '../api.js';
+import { previewStart } from '../api.js';
 import { keepDialog, compareDialog, sideBySideCompare, restoreDialog, buildFlow, currentVersion, vname, fullName, stateLabel, stateMeaning, PREFERRED_MEANING } from '../components/version-actions.js';
 import { renderVersions } from '../components/versions-drawer.js';
 import { createVersionStrip } from '../components/version-strip.js';
@@ -21,6 +21,7 @@ import { deviceOf, capWords, stageFoot, statusWords, RUNS_TOGGLE, runsToggle } f
 import { createSplitter } from '../components/splitter.js';
 import { createLiveSwitch } from '../components/live-switch.js';
 import { liveFrameUrl, LIVE_SELECT_TITLE } from '../components/live-words.js';
+import { fileOfUrl } from '../../workbenches/page/pages.js';
 
 let ui = null;
 
@@ -107,6 +108,8 @@ export function mount(host, app) {
     // A press inside the frame fires in its own document and never reaches previewWrap.
     frame.contentDocument?.addEventListener('pointerdown', () => ui?.previewFocus.press(), true);
     ui.previewFocus.loaded();
+    // The page a version opened on is read from the frame: the server chose it from that version's own manifest.
+    if (ui.ref !== 'head') { try { ui.versionFile = fileOfUrl(frame.contentWindow.location.href); } catch { ui.versionFile = null; } renderCap(); }
     checkPreview();
   });
   ui.offs.push(() => window.removeEventListener('message', onMessage));
@@ -158,7 +161,9 @@ function setSrc(ref) {
   ui.overlay.hidden = true;
   // A query string busts any cached document so "Try" always shows the files on disk now. With Live on, the head is
   // the project's own server: /live/<id> answers with a 302 to its address, so the token never passes through here.
-  frame.src = ref === 'head' && ui.live.running() ? liveFrameUrl(projectId) : `${previewUrl(projectId, ref, ui.app.state.bundle?.manifest?.entry)}?t=${Date.now()}`;
+  // A version opens on its own entry, which the server reads from that version's atelier.json (api.js previewStart).
+  ui.versionFile = null;
+  frame.src = ref === 'head' && ui.live.running() ? liveFrameUrl(projectId) : `${previewStart(projectId, ref, ui.app.state.bundle?.manifest?.entry)}?t=${Date.now()}`;
   renderBanner();
   renderCap();
   renderFoot();
@@ -438,7 +443,7 @@ function renderCap() {
   if (!ui?.projectId || !ui.app.state.bundle) return;
   const b = ui.app.state.bundle;
   const width = ui.device === 'mobile' ? 390 : parseInt(ui.frame.style.width, 10) || null;
-  const w = capWords({ pageName: b.project?.ui?.pageInView?.name || null, entry: b.manifest?.entry || null, device: ui.device, width, ...capModel() });
+  const w = capWords({ pageName: b.project?.ui?.pageInView?.name || null, entry: (ui.ref !== 'head' && ui.versionFile) || b.manifest?.entry || null, device: ui.device, width, ...capModel() });
   ui.cap.firstChild.textContent = liveShown() ? `Live · ${ui.live.label()}` : w.left;
   ui.cap.lastChild.textContent = liveShown() ? ui.live.host() || '' : w.right;
 }

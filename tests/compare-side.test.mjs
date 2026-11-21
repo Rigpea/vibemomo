@@ -33,7 +33,7 @@ globalThis.__sbs = {
     const close = () => { if (closed) return; closed = true; onClose?.(); resolve(); };
     return { close, done, node: node() };
   },
-  previewUrl: () => '/preview',
+  previewStart: (await import('../client/api.js')).previewStart, // the real one: what each frame opens is tested below
   renderDiff: () => node(),
   vname: (v) => `#${v.n}`,
   currentVersion: (b) => b.versions[0],
@@ -41,13 +41,13 @@ globalThis.__sbs = {
 };
 const source = (await fsp.readFile(new URL('../client/components/compare-side.js', import.meta.url), 'utf8'))
   .replace(/import \{[^}]*\} from '\.\/ui\.js';/, 'const { el, clear, button, dialog, select, toast, loading } = globalThis.__sbs;')
-  .replace(/import \{[^}]*\} from '\.\.\/api\.js';/, 'const { previewUrl } = globalThis.__sbs;')
+  .replace(/import \{[^}]*\} from '\.\.\/api\.js';/, 'const { previewStart } = globalThis.__sbs;')
   .replace(/import \{[^}]*\} from '\.\/version-actions\.js';/, 'const { renderDiff, vname, currentVersion, stateLabel } = globalThis.__sbs;');
 const { sideBySide } = await import(`data:text/javascript,${encodeURIComponent(source)}`);
 
 const tick = () => new Promise((r) => setImmediate(r));
 
-function setup({ narrow = false, panelOpen = false } = {}) {
+function setup({ narrow = false, panelOpen = false, open = undefined } = {}) {
   frames.length = 0;
   const docListeners = new Set();
   const winListeners = new Set();
@@ -81,7 +81,7 @@ function setup({ narrow = false, panelOpen = false } = {}) {
     api: { compare: async () => ({ files: [], diff: '', a: {}, b: {} }) },
     workbench: { bus: { receiveFrame: (frame, msg) => received.push([frame, msg]), resetFrame: (frame) => frameResets.push(frame) }, host: () => node(), collapseDock: () => false },
   };
-  const d = sideBySide(app);
+  const d = sideBySide(app, open);
   const key = (e) => { const out = { key: 'Escape', defaultPrevented: false, prevented: 0, preventDefault() { this.prevented++; }, ...e }; [...docListeners].forEach((fn) => fn(out)); return out; };
   return { d, app, docListeners, winListeners, focusButton, page, received, frameResets, toggled, key };
 }
@@ -92,6 +92,15 @@ test('a frame\'s own Reload clears only that frame\'s events on the bus', () => 
   s.frameResets.length = 0;
   buttons.findLast((b) => b.label === 'Reload' && b.attrs['aria-label'] === 'Reload A').attrs.onclick();
   assert.deepEqual(s.frameResets, ['A']);
+});
+
+// A version can keep another entry than the one atelier.json names today (the first phone project's #29 opened on its
+// looks page), so a version's frame asks for the version's bare root and the server answers with that version's entry.
+test('a version\'s frame opens on the version\'s own entry (its bare root), the working tree on the current entry', () => {
+  setup({ open: { a: 'v1', b: 'head' } });
+  const [a, b] = frames;
+  assert.match(a.src, /^\/preview\/p_1\/v1\/\?sbs=a&t=\d+$/, 'no entry of today\'s manifest in a version\'s address');
+  assert.match(b.src, /^\/preview\/p_1\/head\/src\/index\.html\?sbs=b&t=\d+$/);
 });
 
 test('a narrow window with the overlay open: opening closes it, and only then', () => {

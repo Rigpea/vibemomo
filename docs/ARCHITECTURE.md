@@ -310,7 +310,13 @@ GET   /api/runs?projectId=<id>|all   {runs:[{id, kind, projectId, name, state, r
 GET   /api/events              SSE: project.changed, task.changed, memory.changed, budget.changed, status, utility.progress, studio.show, runs.changed {projectId, run}, inspiration.changed {projectId, cardId?, action?}, rules.changed {projectId, ruleId?, action?}, references.changed {projectId, refId?, action?}
 GET   /preview/:id/head/<path>                 working tree of the project (static)
 GET   /preview/:id/:vid/<path>                 files of a checkpoint (git show), same relative layout
+GET   /preview/:id/:ref/                       302 to the ref's entry, the query kept: head -> the current atelier.json's entry; a version -> the entry its own atelier.json names at that commit, else the current one (`entryAt` in server/lib/preview.mjs)
 ```
+A version can keep another entry than the project has today, so a frame that shows a version asks for the bare root
+and lets the server choose (`previewStart` in client/api.js: Try, a version's Try it, both Side by side frames); the
+files on disk are asked for by the current manifest's entry. An entry counts only as a path inside the folder
+(`entryPath`); a version with no manifest, one that is not JSON, or one whose entry is empty or leaves the folder
+opens on the current entry. The Workbench reads the page a version opened on back from the frame for the line above it.
 Utility tasks (api-utility): `summarize-doc`, `extract-metadata`, `tag-resource`,
 `group-feedback`, `draft-session-summary`, `draft-memory-candidates`,
 `prepare-context`, `explain`. Each has an input schema, an output JSON schema,

@@ -46,10 +46,10 @@ globalThis.window = { addEventListener() {}, removeEventListener() {} };
 
 const uiUrl = new URL('../client/components/ui.js', import.meta.url).href;
 const { closeDialogsIn } = await import(uiUrl);
-globalThis.__sbs = { previewUrl: () => '/preview', renderDiff: () => new FakeNode('div'), vname: (v) => `#${v.n}`, currentVersion: (b) => b.versions[0], stateLabel: (s) => s };
+globalThis.__sbs = { previewStart: () => '/preview', renderDiff: () => new FakeNode('div'), vname: (v) => `#${v.n}`, currentVersion: (b) => b.versions[0], stateLabel: (s) => s };
 const source = (await fsp.readFile(new URL('../client/components/compare-side.js', import.meta.url), 'utf8'))
   .replace(/from '\.\/ui\.js';/, `from '${uiUrl}';`)
-  .replace(/import \{[^}]*\} from '\.\.\/api\.js';/, 'const { previewUrl } = globalThis.__sbs;')
+  .replace(/import \{[^}]*\} from '\.\.\/api\.js';/, 'const { previewStart } = globalThis.__sbs;')
   .replace(/import \{[^}]*\} from '\.\/version-actions\.js';/, 'const { renderDiff, vname, currentVersion, stateLabel } = globalThis.__sbs;');
 const moduleUrl = `data:text/javascript,${encodeURIComponent(source)}`;
 

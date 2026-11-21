@@ -1,6 +1,7 @@
 // Preview: serve a project's working tree (head) or any checkpoint (git show)
 // under /preview/:projectId/:ref/<path>. Same relative layout either way, so
-// relative asset links inside the product keep working.
+// relative asset links inside the product keep working. The bare root
+// /preview/:projectId/:ref/ redirects to the entry of that ref.
 import path from 'node:path';
 import fsp from 'node:fs/promises';
 import { insideProject, HttpError, toPosix } from './paths.mjs';
@@ -40,9 +41,29 @@ export function mimeFor(file) {
   return MIME[path.extname(file).toLowerCase()] || 'application/octet-stream';
 }
 
-/** Resolve the entry file for a project (manifest.entry, else index.html). */
-export function entryFor(manifest) {
-  return manifest?.entry || 'index.html';
+/** A manifest's entry as a path inside the project ("dist/welcome/looks.html"), or null when it names none or one that
+ *  leaves the folder. It ends in a redirect, where a browser would follow ".." out of the preview's own path. */
+export function entryPath(manifest) {
+  if (typeof manifest?.entry !== 'string') return null;
+  const raw = manifest.entry.trim().replace(/\\/g, '/').replace(/^\/+/, '');
+  if (!raw || /^[a-z]:/i.test(raw) || /[\u0000-\u001f]/.test(raw)) return null;
+  const clean = path.posix.normalize(raw).replace(/^\.\//, '');
+  return clean === '.' || clean === '..' || clean.startsWith('../') ? null : clean;
+}
+
+/**
+ * The entry a ref opens on. The files on disk: the current manifest's. A version: the entry its own atelier.json names,
+ * read from its commit, because a version can keep another page than the one the project opens on today; a version with
+ * no manifest, an unreadable one or one that names no entry opens on the current entry. own says which of the two it is.
+ */
+export async function entryAt(projectPath, manifest, ref) {
+  const current = entryPath(manifest) || 'index.html';
+  if (ref === 'head') return { entry: current, own: true };
+  const version = await getVersion(projectPath, ref);
+  const buf = version.sha ? await git.showFile(projectPath, version.sha, 'atelier.json') : null;
+  let kept = null;
+  try { kept = buf ? entryPath(JSON.parse(buf.toString('utf8').replace(/^﻿/, ''))) : null; } catch { /* not JSON: as if it had none */ }
+  return { entry: kept || current, own: !!kept };
 }
 
 export async function servePreview(req, res, { projectId, ref, rel }) {
@@ -55,10 +76,12 @@ export async function servePreview(req, res, { projectId, ref, rel }) {
   }
   let target = rel || '';
   if (!target) {
-    // The bare preview root redirects to the manifest entry so relative asset links resolve
-    // against the entry's own folder (e.g. src/game.js next to src/index.html).
-    const entry = entryFor(manifest).replace(/^\/+/, '');
-    res.writeHead(302, { Location: `/preview/${projectId}/${ref}/${entry}`, 'Cache-Control': 'no-store' });
+    // The bare preview root redirects to the entry so relative asset links resolve against the entry's own folder
+    // (e.g. src/game.js next to src/index.html). The entry is the ref's own (entryAt), and the query rides along:
+    // the client's cache-buster and the side-by-side frame's letter.
+    const { entry } = await entryAt(projectPath, manifest, ref);
+    const search = new URL(req.url, 'http://studio.local').search;
+    res.writeHead(302, { Location: `/preview/${encodeURIComponent(projectId)}/${encodeURIComponent(ref)}/${entry.split('/').map(encodeURIComponent).join('/')}${search}`, 'Cache-Control': 'no-store' });
     return res.end();
   }
   if (target.endsWith('/')) target = target + 'index.html';

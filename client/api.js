@@ -178,7 +178,10 @@ export const api = {
   skillDepartments: (op) => post('/api/skills/departments', op),
 };
 
-/** Preview URL. Pass the manifest entry (e.g. "src/index.html") so relative asset links resolve
- *  next to the entry file; the bare "/head/" form serves the entry but breaks relative links. */
+/** Preview URL of a file of a ref (e.g. "src/index.html"). With no file it is the ref's bare root, which the server
+ *  redirects to that ref's entry: for a version the one its own atelier.json names, else the current one. */
 export const previewUrl = (projectId, ref = 'head', entry = '') =>
   `/preview/${enc(projectId)}/${enc(ref)}/${String(entry || '').replace(/^\/+/, '').split('/').map(enc).join('/')}`;
+/** What a preview frame opens for a ref: the files on disk at the current manifest's entry, a version at its bare
+ *  root, because only the server can read which page that version opened on (its entry may differ from today's). */
+export const previewStart = (projectId, ref, currentEntry) => previewUrl(projectId, ref, ref === 'head' ? currentEntry : '');

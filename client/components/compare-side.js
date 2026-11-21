@@ -4,7 +4,7 @@
 // t_yvdq0vwjn3 (Esc closes from a focused preview, pointer mirroring, Apply
 // live reaches working-tree frames through app.previewTargets).
 import { el, clear, button, dialog, select, toast, loading, icon } from './ui.js';
-import { previewUrl } from '../api.js';
+import { previewStart } from '../api.js';
 import { renderDiff, vname, currentVersion, stateLabel } from './version-actions.js';
 
 const MIRRORED = ['keydown', 'keyup'];
@@ -126,7 +126,8 @@ export function sideBySide(app, { a, b: bRef } = {}) {
     const ref = state[side];
     stats[side] = { events: 0, last: '' };
     app.workbench?.bus.resetFrame(side.toUpperCase());
-    frames[side].src = `${previewUrl(pid, ref, entry)}?sbs=${side}&t=${Date.now()}`;
+    // Each frame opens on its own ref's entry: a version's comes from its own atelier.json, on the server.
+    frames[side].src = `${previewStart(pid, ref, entry)}?sbs=${side}&t=${Date.now()}`;
     renderLabels();
   }
   for (const side of ['a', 'b']) frames[side].addEventListener('load', () => wire(side));

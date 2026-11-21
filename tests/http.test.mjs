@@ -174,6 +174,69 @@ test('preview serves head and version files and refuses escapes', async () => {
   assert.ok([400, 404].includes(studio.status), 'records are not served as preview files');
 });
 
+// Try and Side by side open a version at its bare root (client/api.js previewStart). A version can keep another entry
+// than the one atelier.json names today: seen on the first phone project, whose version opened on a looks page while
+// the project's entry had gone back to index.html, so Try showed the plain app.
+test('a version\'s bare preview root opens the entry its own atelier.json names; one that names none opens the current entry', async () => {
+  const made = await api('POST', '/api/projects', { name: 'Entry Room', kind: 'game', template: 'game-room-one' });
+  assert.equal(made.status, 200, JSON.stringify(made.data));
+  const id = made.data.project.id;
+  const first = made.data.version.id;
+  const folder = (await api('GET', '/api/projects')).data.find((p) => p.id === id).path;
+  const manifestFile = path.join(folder, 'atelier.json');
+  const original = JSON.parse(await fsp.readFile(manifestFile, 'utf8'));
+  assert.equal(original.entry, 'src/index.html');
+  const setEntry = (entry) => fsp.writeFile(manifestFile, JSON.stringify({ ...original, entry }, null, 2));
+  const keep = async (label) => {
+    const kept = await api('POST', `/api/projects/${id}/versions`, { label });
+    assert.equal(kept.status, 200, JSON.stringify(kept.data));
+    return kept.data.id;
+  };
+  /** Where the bare root of a ref sends a frame: the Location, without following it. */
+  const opensOn = async (ref, query = '') => {
+    const res = await fetch(`${BASE}/preview/${id}/${ref}/${query}`, { redirect: 'manual' });
+    assert.equal(res.status, 302, `${ref}: ${res.status}`);
+    assert.equal(res.headers.get('cache-control'), 'no-store');
+    return res.headers.get('location');
+  };
+
+  await fsp.writeFile(path.join(folder, 'src', 'looks.html'), '<!doctype html><title>Looks</title><p id="looks">Now A B C</p>');
+  await setEntry('src/looks.html');
+  const looks = await keep('Looks comparison');
+  await setEntry('src/index.html');
+  const back = await keep('Back to the game');
+
+  // Two versions, two entries: each opens on its own, whatever the project's entry is now.
+  assert.equal(await opensOn(looks), `/preview/${id}/${looks}/src/looks.html`);
+  assert.equal(await opensOn(first), `/preview/${id}/${first}/src/index.html`);
+  assert.equal(await opensOn(back), `/preview/${id}/${back}/src/index.html`);
+  assert.equal(await opensOn('head'), `/preview/${id}/head/src/index.html`);
+  // The query rides along: the cache-buster and the side-by-side frame's letter.
+  assert.equal(await opensOn(looks, '?sbs=a&t=1794000000000'), `/preview/${id}/${looks}/src/looks.html?sbs=a&t=1794000000000`);
+  // Followed, as a frame does, it is the looks page of that version; the same address with today's entry is the game.
+  const page = await fetch(`${BASE}/preview/${id}/${looks}/?t=1`);
+  assert.equal(page.status, 200);
+  assert.match(page.url, /\/src\/looks\.html\?t=1$/);
+  assert.match(await page.text(), /id="looks"/);
+  assert.doesNotMatch(await (await fetch(`${BASE}/preview/${id}/${looks}/src/index.html`)).text(), /id="looks"/);
+
+  // The files on disk follow the current manifest, and a version still opens on its own entry.
+  await setEntry('src/looks.html');
+  assert.equal(await opensOn('head'), `/preview/${id}/head/src/looks.html`);
+  assert.equal(await opensOn(first), `/preview/${id}/${first}/src/index.html`);
+
+  // A version with no manifest, one that is not JSON and one whose entry leaves the folder: the current entry, as before.
+  await fsp.rm(manifestFile);
+  const bare = await keep('No manifest');
+  await fsp.writeFile(manifestFile, '{ not json');
+  const damaged = await keep('Damaged manifest');
+  await setEntry('../../outside.html');
+  const outside = await keep('Entry outside the folder');
+  await setEntry('src/looks.html');
+  for (const v of [bare, damaged, outside]) assert.equal(await opensOn(v), `/preview/${id}/${v}/src/looks.html`, v);
+  assert.equal((await fetch(`${BASE}/preview/${id}/v_missing/`, { redirect: 'manual' })).status, 404, 'a version that is not there is still a 404');
+});
+
 test('budget pause blocks utilities only; retrieval, versions and tasks keep working', async () => {
   const paused = await api('PATCH', '/api/budget', { paused: true });
   assert.equal(paused.data.paused, true);
